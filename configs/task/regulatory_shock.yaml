@@ -1,0 +1,4 @@
+_target_: shachi_shock.task.RegulatoryShockTask
+num_episodes: 1
+ticks_per_episode: 60
+start_price: 100.0

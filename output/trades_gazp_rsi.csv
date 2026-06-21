@@ -1,0 +1,6 @@
+tick,date,agent_id,ticker,strategy,action,quantity,price,position_after,cash_after
+19,2024-08-20,gazp_rsi,GAZP,rsi,buy,1191,125.85,1191,16734.35
+21,2024-08-22,gazp_rsi,GAZP,rsi,sell,1191,118.51,0,157837.42
+22,2024-08-23,gazp_rsi,GAZP,rsi,buy,1216,116.81,1216,15753.84
+26,2024-08-29,gazp_rsi,GAZP,rsi,sell,1216,130.27,0,174114.64
+89,2024-11-26,gazp_rsi,GAZP,rsi,buy,1368,114.5,1368,17431.65

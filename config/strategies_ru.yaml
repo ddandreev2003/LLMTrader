@@ -1,0 +1,54 @@
+strategy_agents:
+  - id: sber_sma
+    ticker: SBER
+    strategy: sma_cross
+    llm_enabled: false
+    params:
+      sma_period: 20
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+  - id: gazp_rsi
+    ticker: GAZP
+    strategy: rsi
+    llm_enabled: false
+    params:
+      period: 14
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+  - id: lkoh_macd
+    ticker: LKOH
+    strategy: macd
+    llm_enabled: false
+    params:
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+  - id: ydex_momentum
+    ticker: YDEX
+    strategy: momentum
+    llm_enabled: false
+    params:
+      roc_period: 10
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+  - id: gmkn_mean_rev
+    ticker: GMKN
+    strategy: mean_reversion
+    llm_enabled: false
+    params:
+      bb_period: 20
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+  - id: nvtk_sma
+    ticker: NVTK
+    strategy: sma_cross
+    llm_enabled: false
+    params:
+      sma_period: 20
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10

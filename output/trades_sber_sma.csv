@@ -1,0 +1,5 @@
+tick,date,agent_id,ticker,strategy,action,quantity,price,position_after,cash_after
+44,2024-09-24,sber_sma,SBER,sma_cross,buy,549,272.92,549,16788.64
+50,2024-10-02,sber_sma,SBER,sma_cross,sell,549,259.31,0,159107.12
+79,2024-11-12,sber_sma,SBER,sma_cross,buy,559,255.77,559,16088.8
+84,2024-11-19,sber_sma,SBER,sma_cross,sell,559,240.59,0,150538.26

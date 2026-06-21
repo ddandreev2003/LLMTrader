@@ -1,0 +1,26 @@
+portfolio:
+  initial_cash_rub: 1000000
+  max_position_pct: 0.25
+  agent_max_position_pct: 0.95
+  commission_pct: 0.0003
+  trade_cutoff_ticks: 5
+
+assets:
+  - ticker: SBER
+    board: TQBR
+  - ticker: GAZP
+    board: TQBR
+  - ticker: LKOH
+    board: TQBR
+  - ticker: YDEX
+    board: TQBR
+  - ticker: GMKN
+    board: TQBR
+  - ticker: NVTK
+    board: TQBR
+
+data:
+  warmup_from: "2023-01-01"
+  from: "2024-01-01"
+  till: "2024-12-31"
+  interval: 24

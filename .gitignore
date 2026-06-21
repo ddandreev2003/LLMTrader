@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+trades_history.csv
+simulation_report.txt
+data/cache/
+data/local/
+outputs/

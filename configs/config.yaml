@@ -1,0 +1,11 @@
+defaults:
+  - _self_
+  - task: regulatory_shock
+  - agent: regulator_multi
+
+num_episodes: 1
+batchsize: 1
+
+hydra:
+  run:
+    dir: outputs/hydra/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}

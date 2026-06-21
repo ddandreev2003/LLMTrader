@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLMSimTrade — Live Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --shock: #f59e0b;
+      --halt: #ef4444;
+      --ok: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 16px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    h1 { font-size: 1.25rem; font-weight: 600; }
+    .status {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.875rem;
+    }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid #2d3a4f;
+    }
+    .badge.running { border-color: var(--ok); color: var(--ok); }
+    .badge.finished { border-color: var(--muted); }
+    .badge.halted { border-color: var(--halt); color: var(--halt); }
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      border: 1px solid #2d3a4f;
+      padding: 16px;
+    }
+    .card h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .chart-wrap { position: relative; height: 280px; }
+    .agents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .agent-card {
+      background: #121a26;
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid #2d3a4f;
+      font-size: 0.8rem;
+    }
+    .agent-card .id { font-weight: 600; color: var(--accent); }
+    .agent-card .pnl-pos { color: var(--ok); }
+    .agent-card .pnl-neg { color: var(--halt); }
+    #event-log {
+      max-height: 320px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      font-family: ui-monospace, monospace;
+    }
+    .event {
+      padding: 6px 0;
+      border-bottom: 1px solid #2d3a4f;
+    }
+    .event.shock { color: var(--shock); font-weight: 600; }
+    .event.trade { color: #93c5fd; }
+    .event.halt { color: var(--halt); }
+    .shock-flash {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: #422006;
+      border: 2px solid var(--shock);
+      border-radius: 12px;
+      padding: 16px 20px;
+      max-width: 360px;
+      z-index: 100;
+      animation: pulse 0.5s ease-in-out 3;
+      display: none;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    .shock-list { margin-top: 8px; }
+    .shock-item {
+      padding: 8px;
+      margin-bottom: 6px;
+      border-radius: 8px;
+      background: #121a26;
+      border-left: 4px solid var(--shock);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="shock-flash" class="shock-flash"></div>
+
+  <header>
+    <h1>LLMSimTrade — Live Dashboard</h1>
+    <div class="status">
+      <span id="status-badge" class="badge">—</span>
+      <span id="tick-info" class="badge">tick —</span>
+      <span id="date-info" class="badge">—</span>
+      <span id="bench-info" class="badge">bench —</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Рынок + шоки (онлайн)</h2>
+        <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>Equity по агентам (независимые портфели)</h2>
+        <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+        <div id="agents-grid" class="agents-grid"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Регуляторные шоки</h2>
+        <div id="shock-list" class="shock-list"></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>Лента событий</h2>
+        <div id="event-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const AGENT_COLORS = ['#3b82f6','#22c55e','#f59e0b','#a855f7','#ec4899','#14b8a6'];
+    let lastShockCount = 0;
+    let priceChart, equityChart;
+
+    function initCharts() {
+      priceChart = new Chart(document.getElementById('priceChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [{
+          label: 'Benchmark (avg)',
+          data: [],
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.1)',
+          fill: true,
+          tension: 0.2,
+          pointRadius: 0,
+        }]},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#8b9cb3' } } },
+          scales: {
+            x: { ticks: { color: '#8b9cb3', maxTicksLimit: 12 }, grid: { color: '#2d3a4f' } },
+            y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
+          },
+        },
+      });
+
+      equityChart = new Chart(document.getElementById('equityChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#8b9cb3', font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#8b9cb3', maxTicksLimit: 12 }, grid: { color: '#2d3a4f' } },
+            y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
+          },
+        },
+      });
+    }
+
+    function shockAnnotations(shocks, ticks) {
+      return shocks.map(s => ({
+        type: 'line',
+        xMin: s.tick, xMax: s.tick,
+        borderColor: s.color || '#f59e0b',
+        borderWidth: 2,
+        borderDash: [4, 4],
+        label: {
+          display: true,
+          content: `${s.type} ${s.price_impact_pct > 0 ? '+' : ''}${s.price_impact_pct}%`,
+          position: 'start',
+          backgroundColor: s.color || '#f59e0b',
+          color: '#000',
+          font: { size: 9 },
+        },
+      }));
+    }
+
+    function updateDashboard(state) {
+      const badge = document.getElementById('status-badge');
+      badge.textContent = state.status || '—';
+      badge.className = 'badge ' + (state.halted ? 'halted' : state.status);
+
+      document.getElementById('tick-info').textContent = `tick ${state.tick}`;
+      document.getElementById('date-info').textContent = state.date || '—';
+      document.getElementById('bench-info').textContent = `bench ${state.benchmark_price}`;
+
+      const hist = state.price_history || { ticks: [], benchmark: [] };
+      priceChart.data.labels = hist.ticks;
+      priceChart.data.datasets[0].data = hist.benchmark;
+
+      const agentIds = Object.keys(state.agent_equity || {});
+      const labels = hist.ticks;
+      equityChart.data.labels = labels;
+      equityChart.data.datasets = agentIds.map((id, i) => ({
+        label: id,
+        data: (state.agent_equity[id] || []).map(p => p.value),
+        borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
+        tension: 0.2,
+        pointRadius: 0,
+      }));
+      priceChart.update('none');
+      equityChart.update('none');
+
+      const grid = document.getElementById('agents-grid');
+      grid.innerHTML = '';
+      for (const [id, snap] of Object.entries(state.agents || {})) {
+        const pnl = snap.pnl || 0;
+        const div = document.createElement('div');
+        div.className = 'agent-card';
+        div.innerHTML = `
+          <div class="id">${id}</div>
+          <div>${snap.ticker} / ${snap.strategy || ''}</div>
+          ${snap.holdings ? `<div>holdings: ${JSON.stringify(snap.holdings)}</div>` : ''}
+          ${snap.target_weights ? `<div>targets: ${Object.entries(snap.target_weights).map(([t,w]) => t+':'+(w*100).toFixed(0)+'%').join(' ')}</div>` : ''}
+          <div>${(snap.portfolio_value || 0).toLocaleString('ru')} ₽</div>
+          <div class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('ru')} ₽</div>
+          <div>pos: ${snap.position || 0}</div>`;
+        grid.appendChild(div);
+      }
+
+      const shockList = document.getElementById('shock-list');
+      shockList.innerHTML = (state.shocks || []).slice().reverse().map(s => `
+        <div class="shock-item" style="border-left-color:${s.color || '#f59e0b'}">
+          <strong>tick ${s.tick}</strong> · ${s.type}
+          <span style="color:${s.price_impact_pct >= 0 ? '#22c55e' : '#ef4444'}">
+            ${s.price_impact_pct > 0 ? '+' : ''}${s.price_impact_pct}%
+          </span>
+          <div style="color:#8b9cb3;margin-top:4px">${s.description || ''}</div>
+        </div>`).join('') || '<div style="color:#8b9cb3">Шоков пока нет</div>';
+
+      const log = document.getElementById('event-log');
+      log.innerHTML = (state.recent_events || []).slice().reverse().map(e =>
+        `<div class="event ${e.kind}">${e.message}</div>`
+      ).join('');
+
+      if ((state.shocks || []).length > lastShockCount) {
+        const latest = state.shocks[state.shocks.length - 1];
+        const flash = document.getElementById('shock-flash');
+        flash.style.display = 'block';
+        flash.innerHTML = `<strong>⚡ ШОК: ${latest.type}</strong><br>
+          tick ${latest.tick} · ${latest.price_impact_pct > 0 ? '+' : ''}${latest.price_impact_pct}%<br>
+          <small>${latest.description || ''}</small>`;
+        setTimeout(() => { flash.style.display = 'none'; }, 8000);
+        lastShockCount = state.shocks.length;
+      }
+    }
+
+    async function poll() {
+      try {
+        const res = await fetch(`live_state.json?t=${Date.now()}`);
+        if (res.ok) {
+          const state = await res.json();
+          updateDashboard(state);
+        }
+      } catch (e) { /* waiting for sim start */ }
+    }
+
+    initCharts();
+    setInterval(poll, 500);
+    poll();
+  </script>
+</body>
+</html>

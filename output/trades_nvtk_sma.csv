@@ -1,0 +1,7 @@
+tick,date,agent_id,ticker,strategy,action,quantity,price,position_after,cash_after
+44,2024-09-24,nvtk_sma,NVTK,sma_cross,buy,144,1040.2,144,16832.93
+50,2024-10-02,nvtk_sma,NVTK,sma_cross,sell,144,980.2,0,157939.39
+79,2024-11-12,nvtk_sma,NVTK,sma_cross,buy,153,927.8,153,15943.4
+81,2024-11-14,nvtk_sma,NVTK,sma_cross,sell,153,893.8,0,152653.77
+82,2024-11-15,nvtk_sma,NVTK,sma_cross,buy,149,917.8,149,15860.55
+84,2024-11-19,nvtk_sma,NVTK,sma_cross,sell,149,875.0,0,146196.44

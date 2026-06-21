@@ -1,0 +1,18 @@
+openai>=1.30.0
+pandas>=2.0.0
+numpy>=1.26.0
+python-dotenv>=1.0.0
+litellm>=1.61.3
+hydra-core>=1.3.0
+pydantic>=2.0
+pytest>=8.0
+pytest-asyncio>=0.24.0
+pyyaml>=6.0
+requests>=2.31.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+websockets>=12.0
+httpx>=0.27.0
+
+# Shachi (SakanaAI) — полный пакет не ставится (camel-ai==0.2.2 yanked).
+# Используется vendored shachi_shock/vendor/base.py (Apache-2.0).

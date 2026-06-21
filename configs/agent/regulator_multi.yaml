@@ -1,0 +1,7 @@
+_target_: shachi_shock.agents.regulator_agent.create_regulator_agents
+num_agents: 3
+model: ${oc.env:LLM_MODEL_FAST,gpt-4o-mini}
+temperature: 0.5
+memory_cls_path: shachi_shock.agents.memory.HistoryMemory
+memory_cls_kwargs:
+  history_length: 5

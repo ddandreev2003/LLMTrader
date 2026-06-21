@@ -1,0 +1,5 @@
+tick,date,agent_id,ticker,strategy,action,quantity,price,position_after,cash_after
+20,2024-08-21,gmkn_mean_rev,GMKN,mean_reversion,buy,1235,121.44,1235,16643.27
+22,2024-08-23,gmkn_mean_rev,GMKN,mean_reversion,sell,1235,113.04,0,156205.79
+24,2024-08-27,gmkn_mean_rev,GMKN,mean_reversion,buy,1245,112.9,1245,15603.12
+28,2024-09-02,gmkn_mean_rev,GMKN,mean_reversion,sell,1245,103.12,0,143949.01

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLMSimTrade — Web Console</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419; --card: #1a2332; --text: #e7ecf3; --muted: #8b9cb3;
+      --accent: #3b82f6; --shock: #f59e0b; --halt: #ef4444; --ok: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 16px; }
+    header { margin-bottom: 16px; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 12px; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      background: var(--card); border: 1px solid #2d3a4f; border-radius: 12px; padding: 12px 16px;
+    }
+    button {
+      padding: 8px 16px; border-radius: 8px; border: 1px solid #2d3a4f;
+      background: #121a26; color: var(--text); cursor: pointer; font-size: 0.875rem;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .status-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-left: auto; font-size: 0.875rem; }
+    .badge { padding: 4px 10px; border-radius: 999px; background: #121a26; border: 1px solid #2d3a4f; }
+    .badge.running { border-color: var(--ok); color: var(--ok); }
+    .badge.paused { border-color: var(--shock); color: var(--shock); }
+    .badge.waiting_llm { border-color: #a855f7; color: #a855f7; }
+    .speed { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+    .tabs { display: flex; gap: 4px; margin: 16px 0 12px; }
+    .tab {
+      padding: 8px 16px; border-radius: 8px 8px 0 0; background: var(--card);
+      border: 1px solid #2d3a4f; border-bottom: none; cursor: pointer; font-size: 0.875rem;
+    }
+    .tab.active { background: #121a26; border-color: var(--accent); color: var(--accent); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border-radius: 12px; border: 1px solid #2d3a4f; padding: 16px; }
+    .card h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 12px; }
+    .chart-wrap { position: relative; height: 280px; }
+    .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+    .agent-card { background: #121a26; border-radius: 8px; padding: 10px; border: 1px solid #2d3a4f; font-size: 0.8rem; }
+    .agent-card .id { font-weight: 600; color: var(--accent); }
+    .agent-card .pnl-pos { color: var(--ok); }
+    .agent-card .pnl-neg { color: var(--halt); }
+    #event-log { max-height: 320px; overflow-y: auto; font-size: 0.8rem; font-family: ui-monospace, monospace; }
+    .event { padding: 6px 0; border-bottom: 1px solid #2d3a4f; }
+    .event.shock { color: var(--shock); font-weight: 600; }
+    .event.trade { color: #93c5fd; }
+    .shock-item { padding: 8px; margin-bottom: 6px; border-radius: 8px; background: #121a26; border-left: 4px solid var(--shock); font-size: 0.8rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+    input, select { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #2d3a4f; background: #121a26; color: var(--text); }
+    .msg { margin-top: 12px; font-size: 0.85rem; color: var(--muted); }
+    .msg.error { color: var(--halt); }
+    .msg.ok { color: var(--ok); }
+    .spinner { display: none; color: #a855f7; font-size: 0.85rem; }
+    .spinner.visible { display: inline; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LLMSimTrade — Web Console</h1>
+    <div class="controls">
+      <button id="btn-start" class="primary">Start</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-step">Step (+1)</button>
+      <button id="btn-play">Play</button>
+      <button id="btn-stop">Stop</button>
+      <button id="btn-reset">Reset</button>
+      <div class="speed">
+        <label for="speed">Скорость</label>
+        <input type="range" id="speed" min="100" max="5000" step="100" value="500" style="width:120px" />
+        <span id="speed-val">500ms</span>
+      </div>
+      <div class="status-bar">
+        <span id="status-badge" class="badge">idle</span>
+        <span id="tick-info" class="badge">tick 0 / —</span>
+        <span id="date-info" class="badge">—</span>
+        <span id="llm-spinner" class="spinner">⏳ ожидание LLM…</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="sim">Симуляция</div>
+    <div class="tab" data-tab="settings">Настройки</div>
+  </div>
+
+  <div id="panel-sim" class="panel active">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>Рынок + шоки</h2>
+          <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h2>Equity по агентам</h2>
+          <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+          <div id="agents-grid" class="agents-grid"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>Регуляторные шоки</h2>
+          <div id="shock-list"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h2>Лента событий</h2>
+          <div id="event-log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-settings" class="panel">
+    <div class="card">
+      <h2>Параметры симуляции</h2>
+      <div class="form-grid">
+        <div>
+          <label>Начальный капитал (₽)</label>
+          <input type="number" id="cfg-cash" value="1000000" step="100000" />
+        </div>
+        <div>
+          <label>Число тиков</label>
+          <input type="number" id="cfg-ticks" placeholder="auto" />
+        </div>
+        <div>
+          <label>SHOCK_INTERVAL</label>
+          <input type="number" id="cfg-shock-interval" value="30" />
+        </div>
+        <div>
+          <label>Режим рынка</label>
+          <select id="cfg-market-mode">
+            <option value="moex">MOEX</option>
+            <option value="synthetic">Synthetic</option>
+          </select>
+        </div>
+        <div>
+          <label>Shock backend</label>
+          <select id="cfg-shock-backend">
+            <option value="legacy">legacy (mock)</option>
+            <option value="shachi">shachi (LLM)</option>
+          </select>
+        </div>
+        <div>
+          <label>Конфиг стратегий</label>
+          <select id="cfg-strategies">
+            <option value="config/strategies_ru.yaml">strategies_ru.yaml</option>
+            <option value="config/strategies_portfolio_manual.yaml">strategies_portfolio_manual.yaml</option>
+          </select>
+        </div>
+        <div>
+          <label>Auto-play interval (ms)</label>
+          <input type="number" id="cfg-auto-interval" value="500" />
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-apply-config" class="primary">Применить</button>
+        <p class="msg" id="config-msg">Изменения доступны только до старта или после Reset (tick 0).</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const AGENT_COLORS = ['#3b82f6','#22c55e','#f59e0b','#a855f7','#ec4899','#14b8a6'];
+    let priceChart, equityChart, ws, pollTimer, wsFailed = false;
+
+    function startPolling() {
+      if (pollTimer) return;
+      wsFailed = true;
+      pollTimer = setInterval(async () => {
+        try {
+          const r = await api('/api/state');
+          if (r.ok) updateUI(await r.json());
+        } catch (e) {}
+      }, 500);
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      wsFailed = false;
+    }
+
+    function api(path, opts = {}) {
+      return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    }
+
+    function initCharts() {
+      const opts = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#8b9cb3' } } },
+        scales: {
+          x: { ticks: { color: '#8b9cb3', maxTicksLimit: 12 }, grid: { color: '#2d3a4f' } },
+          y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
+        },
+      };
+      priceChart = new Chart(document.getElementById('priceChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'Benchmark', data: [], borderColor: '#3b82f6', fill: true, tension: 0.2, pointRadius: 0 }] },
+        options: opts,
+      });
+      equityChart = new Chart(document.getElementById('equityChart'), {
+        type: 'line', data: { labels: [], datasets: [] }, options: opts,
+      });
+    }
+
+    function updateUI(state) {
+      lastState = state;
+      const status = state.status || 'idle';
+      const badge = document.getElementById('status-badge');
+      badge.textContent = status;
+      badge.className = 'badge ' + status + (state.halted ? ' halted' : '');
+
+      const tick = state.tick ?? state.current_tick ?? 0;
+      const total = state.total_ticks || '—';
+      document.getElementById('tick-info').textContent = `tick ${tick} / ${total}`;
+      document.getElementById('date-info').textContent = state.date || '—';
+      document.getElementById('llm-spinner').classList.toggle('visible', status === 'waiting_llm');
+
+      const hist = state.price_history || { ticks: [], benchmark: [] };
+      priceChart.data.labels = hist.ticks;
+      priceChart.data.datasets[0].data = hist.benchmark;
+
+      const agentIds = Object.keys(state.agent_equity || {});
+      equityChart.data.labels = hist.ticks;
+      equityChart.data.datasets = agentIds.map((id, i) => ({
+        label: id,
+        data: (state.agent_equity[id] || []).map(p => p.value),
+        borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
+        tension: 0.2, pointRadius: 0,
+      }));
+      priceChart.update('none');
+      equityChart.update('none');
+
+      const grid = document.getElementById('agents-grid');
+      grid.innerHTML = '';
+      for (const [id, snap] of Object.entries(state.agents || {})) {
+        const pnl = snap.pnl || 0;
+        const div = document.createElement('div');
+        div.className = 'agent-card';
+        div.innerHTML = `<div class="id">${id}</div><div>${snap.ticker || ''}</div>
+          <div>${(snap.portfolio_value || 0).toLocaleString('ru')} ₽</div>
+          <div class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('ru')} ₽</div>`;
+        grid.appendChild(div);
+      }
+
+      document.getElementById('shock-list').innerHTML = (state.shocks || []).slice().reverse().map(s =>
+        `<div class="shock-item" style="border-left-color:${s.color || '#f59e0b'}">
+          <strong>tick ${s.tick}</strong> · ${s.type} ${s.price_impact_pct > 0 ? '+' : ''}${s.price_impact_pct}%
+          <div style="color:#8b9cb3;margin-top:4px">${s.description || ''}</div></div>`
+      ).join('') || '<div style="color:#8b9cb3">Шоков пока нет</div>';
+
+      document.getElementById('event-log').innerHTML = (state.recent_events || []).slice().reverse().map(e =>
+        `<div class="event ${e.kind}">${e.message}</div>`
+      ).join('');
+
+      const editable = ['idle', 'paused'].includes(status) && tick === 0;
+      document.getElementById('btn-apply-config').disabled = !editable;
+    }
+
+    function connectWs() {
+      if (wsFailed) return;
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => stopPolling();
+      ws.onmessage = (ev) => { try { updateUI(JSON.parse(ev.data)); } catch (e) {} };
+      ws.onerror = () => { ws.close(); startPolling(); };
+      ws.onclose = (ev) => {
+        if (wsFailed) return;
+        if (ev.code === 1006 || ev.code === 1001) {
+          startPolling();
+          return;
+        }
+        setTimeout(connectWs, 2000);
+      };
+    }
+
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.getElementById('speed').addEventListener('input', (e) => {
+      document.getElementById('speed-val').textContent = e.target.value + 'ms';
+    });
+
+    document.getElementById('btn-start').onclick = () => api('/api/sim/start', { method: 'POST' });
+    document.getElementById('btn-pause').onclick = () => api('/api/sim/pause', { method: 'POST' });
+    document.getElementById('btn-step').onclick = () => api('/api/sim/step', { method: 'POST' });
+    document.getElementById('btn-play').onclick = () => {
+      const ms = parseInt(document.getElementById('speed').value, 10);
+      api('/api/sim/play', { method: 'POST', body: JSON.stringify({ interval_ms: ms }) });
+    };
+    document.getElementById('btn-stop').onclick = () => api('/api/sim/stop', { method: 'POST' });
+    document.getElementById('btn-reset').onclick = () => api('/api/sim/reset', { method: 'POST' });
+
+    document.getElementById('btn-apply-config').onclick = async () => {
+      const msg = document.getElementById('config-msg');
+      const body = {
+        initial_cash_rub: parseFloat(document.getElementById('cfg-cash').value),
+        shock_interval: parseInt(document.getElementById('cfg-shock-interval').value, 10),
+        market_mode: document.getElementById('cfg-market-mode').value,
+        shock_backend: document.getElementById('cfg-shock-backend').value,
+        strategies_config: document.getElementById('cfg-strategies').value,
+        auto_play_interval_ms: parseInt(document.getElementById('cfg-auto-interval').value, 10),
+      };
+      const ticks = document.getElementById('cfg-ticks').value;
+      if (ticks) body.sim_n_ticks = parseInt(ticks, 10);
+      const res = await api('/api/config', { method: 'PUT', body: JSON.stringify(body) });
+      if (res.ok) {
+        msg.className = 'msg ok';
+        msg.textContent = 'Конфиг применён. Нажмите Start.';
+      } else {
+        const err = await res.json().catch(() => ({}));
+        msg.className = 'msg error';
+        msg.textContent = err.detail || 'Ошибка применения конфига';
+      }
+    };
+
+    async function loadConfig() {
+      const res = await api('/api/config');
+      if (!res.ok) return;
+      const cfg = await res.json();
+      document.getElementById('cfg-cash').value = cfg.initial_cash_rub || 1000000;
+      document.getElementById('cfg-shock-interval').value = cfg.shock_interval || 30;
+      document.getElementById('cfg-market-mode').value = cfg.market_mode || 'moex';
+      document.getElementById('cfg-shock-backend').value = cfg.shock_backend || 'legacy';
+      document.getElementById('cfg-strategies').value = cfg.strategies_config || 'config/strategies_ru.yaml';
+      document.getElementById('cfg-auto-interval').value = cfg.auto_play_interval_ms || 500;
+      if (cfg.sim_n_ticks) document.getElementById('cfg-ticks').value = cfg.sim_n_ticks;
+    }
+
+    initCharts();
+    connectWs();
+    loadConfig();
+    api('/api/state').then(r => r.json()).then(updateUI).catch(() => {});
+  </script>
+</body>
+</html>

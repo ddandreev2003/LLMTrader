@@ -1,0 +1,29 @@
+# Ручная сборка портфеля: каждый агент управляет несколькими тикерами
+# Запуск: STRATEGIES_CONFIG=config/strategies_portfolio_manual.yaml python main.py
+
+strategy_agents:
+  - id: blue_chips_manual
+    type: portfolio
+    initial_capital_rub: 500000
+    universe: [SBER, GAZP, LKOH]
+    portfolio_targets:
+      SBER: 0.40
+      GAZP: 0.35
+      LKOH: 0.25
+    strategy: sma_cross
+    rebalance_interval_ticks: 5
+    rebalance_threshold_pct: 0.03
+    llm_enabled: false
+
+  - id: growth_manual
+    type: portfolio
+    initial_capital_rub: 500000
+    universe: [YDEX, GMKN, NVTK]
+    portfolio_targets:
+      YDEX: 0.45
+      GMKN: 0.30
+      NVTK: 0.25
+    strategy: momentum
+    rebalance_interval_ticks: 5
+    rebalance_threshold_pct: 0.03
+    llm_enabled: false
