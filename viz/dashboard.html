@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LLMSimTrade — Live Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="viz_common.js?v=3"></script>
   <style>
     :root {
       --bg: #0f1419;
@@ -74,6 +76,43 @@
       gap: 8px;
       margin-top: 12px;
     }
+    #agent-panels {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+    @media (max-width: 900px) { #agent-panels { grid-template-columns: 1fr; } }
+    .agent-panel {
+      background: #121a26;
+      border-radius: 10px;
+      border: 1px solid #2d3a4f;
+      padding: 12px;
+      font-size: 0.8rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .agent-panel-accent {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+    }
+    .agent-panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding-left: 6px;
+    }
+    .agent-panel-title { font-weight: 600; color: var(--text); font-size: 0.9rem; }
+    .agent-panel-strategy { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
+    .agent-panel-stats { display: flex; flex-wrap: wrap; gap: 10px; padding-left: 6px; margin-bottom: 6px; }
+    .agent-panel-holdings { padding-left: 6px; color: var(--muted); margin-bottom: 8px; }
+    .agent-panel-chart-wrap { height: 72px; margin: 8px 0 8px 6px; }
+    .agent-panel-trades-title { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; padding-left: 6px; }
+    .agent-panel-trades { list-style: none; padding: 4px 6px; margin: 0; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+    .agent-panel-trades li { padding: 2px 0; border-bottom: 1px solid #1e293b; }
     .agent-card {
       background: #121a26;
       border-radius: 8px;
@@ -123,7 +162,39 @@
       border-left: 4px solid var(--shock);
       font-size: 0.8rem;
     }
+    .ticker-tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    .ticker-tab, .filter-chip {
+      padding: 4px 12px; border-radius: 999px; border: 1px solid #2d3a4f;
+      background: #121a26; color: var(--text); cursor: pointer; font-size: 0.75rem;
+    }
+    .ticker-tab.active, .filter-chip.active { border-color: var(--accent); color: var(--accent); }
+    #candleChart { width: 100%; height: 100%; }
+    .event-filters { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+    .event-row {
+      display: grid; grid-template-columns: 64px 56px 40px 80px 48px 1fr;
+      gap: 6px; padding: 4px 0; border-bottom: 1px solid #2d3a4f; font-size: 0.72rem;
+    }
+    .event-row .ev-kind { color: var(--muted); text-transform: uppercase; }
+    .event-row.shock .ev-msg { color: var(--shock); font-weight: 600; }
+    .event-row.trade .ev-msg { color: #93c5fd; }
+    .event-row.reject .ev-msg { color: var(--halt); }
+    .event-row.signal .ev-msg, .event-row.proposal .ev-msg { color: #c4b5fd; }
+    .muted { color: var(--muted); }
+    .launch-panel { font-size: 0.8rem; }
+    .launch-panel code { background: #121a26; padding: 2px 6px; border-radius: 4px; }
+    .launch-steps { margin-left: 18px; line-height: 1.8; }
+    details.launch-details { margin-bottom: 12px; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    .controls button {
+      padding: 6px 12px; border-radius: 8px; border: 1px solid #2d3a4f;
+      background: #121a26; color: var(--text); cursor: pointer; font-size: 0.8rem;
+    }
+    .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   </style>
+  <script src="sim_controls.js?v=1"></script>
 </head>
 <body>
   <div id="shock-flash" class="shock-flash"></div>
@@ -138,16 +209,38 @@
     </div>
   </header>
 
+  <div class="card sim-controls-api" style="margin-bottom:16px">
+    <h2>Управление симуляцией</h2>
+    <div class="controls">
+      <button id="btn-start" class="sim-controls-api">Start</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-step">Step</button>
+      <button id="btn-play">Play</button>
+      <button id="btn-stop">Stop</button>
+      <button id="btn-reset">Reset</button>
+      <label class="muted" style="margin-left:8px">Скорость</label>
+      <input type="range" id="speed" min="100" max="5000" step="100" value="500" style="width:100px" />
+      <span id="speed-val" class="muted">500ms</span>
+    </div>
+    <p class="muted" style="margin-top:8px;font-size:0.75rem">Web UI: <code>WEB_UI=1 ./scripts/run_intraday.sh</code></p>
+  </div>
+
+  <details class="launch-details card" open>
+    <summary><strong>Запуск intraday-симуляции</strong></summary>
+    <div id="launch-panel" class="launch-panel"></div>
+  </details>
+
   <div class="grid">
     <div>
       <div class="card">
-        <h2>Рынок + шоки (онлайн)</h2>
-        <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+        <h2>Свечи 5m (T / SBER)</h2>
+        <div id="ticker-tabs" class="ticker-tabs"></div>
+        <div class="chart-wrap"><div id="candleChart"></div></div>
       </div>
       <div class="card" style="margin-top:16px">
-        <h2>Equity по агентам (независимые портфели)</h2>
+        <h2>Equity по агентам</h2>
         <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
-        <div id="agents-grid" class="agents-grid"></div>
+        <div id="agent-panels"></div>
       </div>
     </div>
     <div>
@@ -157,6 +250,7 @@
       </div>
       <div class="card" style="margin-top:16px">
         <h2>Лента событий</h2>
+        <div id="event-filters" class="event-filters"></div>
         <div id="event-log"></div>
       </div>
     </div>
@@ -164,30 +258,18 @@
 
   <script>
     const AGENT_COLORS = ['#3b82f6','#22c55e','#f59e0b','#a855f7','#ec4899','#14b8a6'];
-    let lastShockCount = 0;
-    let priceChart, equityChart;
+    let equityChart;
+    const VC = window.VizCommon;
+    const HEADER_IDS = { statusBadge: 'status-badge', tickInfo: 'tick-info', dateInfo: 'date-info', benchInfo: 'bench-info' };
 
     function initCharts() {
-      priceChart = new Chart(document.getElementById('priceChart'), {
-        type: 'line',
-        data: { labels: [], datasets: [{
-          label: 'Benchmark (avg)',
-          data: [],
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59,130,246,0.1)',
-          fill: true,
-          tension: 0.2,
-          pointRadius: 0,
-        }]},
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: '#8b9cb3' } } },
-          scales: {
-            x: { ticks: { color: '#8b9cb3', maxTicksLimit: 12 }, grid: { color: '#2d3a4f' } },
-            y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
-          },
-        },
+      VC.initCandleTabs('ticker-tabs', ['T', 'SBER'], (t) => {
+        VC.setActiveTicker(t);
+        if (window._lastState) VC.updateCandleChart(t, window._lastState.bar_history, window._lastState.shocks);
       });
+      VC.initCandleChart('candleChart');
+      VC.initEventFilters('event-filters');
+      VC.renderLaunchPanel('launch-panel', true);
 
       equityChart = new Chart(document.getElementById('equityChart'), {
         type: 'line',
@@ -203,105 +285,45 @@
       });
     }
 
-    function shockAnnotations(shocks, ticks) {
-      return shocks.map(s => ({
-        type: 'line',
-        xMin: s.tick, xMax: s.tick,
-        borderColor: s.color || '#f59e0b',
-        borderWidth: 2,
-        borderDash: [4, 4],
-        label: {
-          display: true,
-          content: `${s.type} ${s.price_impact_pct > 0 ? '+' : ''}${s.price_impact_pct}%`,
-          position: 'start',
-          backgroundColor: s.color || '#f59e0b',
-          color: '#000',
-          font: { size: 9 },
-        },
-      }));
-    }
-
     function updateDashboard(state) {
-      const badge = document.getElementById('status-badge');
-      badge.textContent = state.status || '—';
-      badge.className = 'badge ' + (state.halted ? 'halted' : state.status);
+      window._lastState = state;
+      VC.updateHeader(state, HEADER_IDS);
+      VC.renderLaunchPanel('launch-panel', state.status === 'initializing');
 
-      document.getElementById('tick-info').textContent = `tick ${state.tick}`;
-      document.getElementById('date-info').textContent = state.date || '—';
-      document.getElementById('bench-info').textContent = `bench ${state.benchmark_price}`;
+      const barHist = state.bar_history || { tickers: ['T','SBER'], candles: {}, timestamps: [] };
+      if (barHist.tickers && barHist.tickers.length) {
+        VC.updateCandleChart(VC.getActiveTicker(), barHist, state.shocks);
+      }
 
       const hist = state.price_history || { ticks: [], benchmark: [] };
-      priceChart.data.labels = hist.ticks;
-      priceChart.data.datasets[0].data = hist.benchmark;
-
-      const agentIds = Object.keys(state.agent_equity || {});
-      const labels = hist.ticks;
-      equityChart.data.labels = labels;
+      const agentIds = Object.keys(state.agent_equity || state.agents_meta || state.agents || {});
+      equityChart.data.labels = hist.ticks;
       equityChart.data.datasets = agentIds.map((id, i) => ({
-        label: id,
+        label: VC.agentLabel(state, id),
         data: (state.agent_equity[id] || []).map(p => p.value),
         borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
         tension: 0.2,
         pointRadius: 0,
       }));
-      priceChart.update('none');
       equityChart.update('none');
 
-      const grid = document.getElementById('agents-grid');
-      grid.innerHTML = '';
-      for (const [id, snap] of Object.entries(state.agents || {})) {
-        const pnl = snap.pnl || 0;
-        const div = document.createElement('div');
-        div.className = 'agent-card';
-        div.innerHTML = `
-          <div class="id">${id}</div>
-          <div>${snap.ticker} / ${snap.strategy || ''}</div>
-          ${snap.holdings ? `<div>holdings: ${JSON.stringify(snap.holdings)}</div>` : ''}
-          ${snap.target_weights ? `<div>targets: ${Object.entries(snap.target_weights).map(([t,w]) => t+':'+(w*100).toFixed(0)+'%').join(' ')}</div>` : ''}
-          <div>${(snap.portfolio_value || 0).toLocaleString('ru')} ₽</div>
-          <div class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('ru')} ₽</div>
-          <div>pos: ${snap.position || 0}</div>`;
-        grid.appendChild(div);
-      }
+      VC.renderAgentPanels('agent-panels', state, Chart);
 
       const shockList = document.getElementById('shock-list');
-      shockList.innerHTML = (state.shocks || []).slice().reverse().map(s => `
-        <div class="shock-item" style="border-left-color:${s.color || '#f59e0b'}">
-          <strong>tick ${s.tick}</strong> · ${s.type}
-          <span style="color:${s.price_impact_pct >= 0 ? '#22c55e' : '#ef4444'}">
-            ${s.price_impact_pct > 0 ? '+' : ''}${s.price_impact_pct}%
-          </span>
-          <div style="color:#8b9cb3;margin-top:4px">${s.description || ''}</div>
-        </div>`).join('') || '<div style="color:#8b9cb3">Шоков пока нет</div>';
-
-      const log = document.getElementById('event-log');
-      log.innerHTML = (state.recent_events || []).slice().reverse().map(e =>
-        `<div class="event ${e.kind}">${e.message}</div>`
-      ).join('');
-
-      if ((state.shocks || []).length > lastShockCount) {
-        const latest = state.shocks[state.shocks.length - 1];
-        const flash = document.getElementById('shock-flash');
-        flash.style.display = 'block';
-        flash.innerHTML = `<strong>⚡ ШОК: ${latest.type}</strong><br>
-          tick ${latest.tick} · ${latest.price_impact_pct > 0 ? '+' : ''}${latest.price_impact_pct}%<br>
-          <small>${latest.description || ''}</small>`;
-        setTimeout(() => { flash.style.display = 'none'; }, 8000);
-        lastShockCount = state.shocks.length;
-      }
+      VC.renderShockList('shock-list', state.shocks);
+      VC.renderEventLog('event-log', state.recent_events, true);
+      VC.flashLatestShock(state.shocks);
     }
 
     async function poll() {
       try {
         const res = await fetch(`live_state.json?t=${Date.now()}`);
-        if (res.ok) {
-          const state = await res.json();
-          updateDashboard(state);
-        }
-      } catch (e) { /* waiting for sim start */ }
+        if (res.ok) updateDashboard(await res.json());
+      } catch (e) { /* waiting */ }
     }
 
     initCharts();
+    SimControls.initWebControls(updateDashboard);
     setInterval(poll, 500);
     poll();
   </script>

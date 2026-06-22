@@ -3,6 +3,7 @@ from strategies.macd import MacdStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from strategies.momentum import MomentumStrategy
 from strategies.rsi import RsiStrategy
+from strategies.scalp_5m import Scalp5mStrategy
 from strategies.sma_cross_strategy import SmaCrossStrategy
 
 _REGISTRY: dict[str, BaseStrategy] = {
@@ -11,6 +12,7 @@ _REGISTRY: dict[str, BaseStrategy] = {
     "rsi": RsiStrategy(),
     "macd": MacdStrategy(),
     "momentum": MomentumStrategy(),
+    "scalp_5m": Scalp5mStrategy(),
 }
 
 

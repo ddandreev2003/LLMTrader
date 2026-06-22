@@ -1,0 +1,32 @@
+shock_price:
+  persistent: true
+  impact_decay_per_bar: 1.0
+
+trading:
+  hft_mode: true
+  micro_steps: 4
+  max_trades_per_step: 6
+  warmup_bars: 2
+  trade_cutoff_bars: 0
+
+portfolio:
+  initial_cash_rub: 1000000
+  agent_max_position_pct: 0.95
+  commission_pct: 0.0003
+  trade_cutoff_bars: 0
+
+assets:
+  - ticker: T
+  - ticker: SBER
+
+data:
+  source: orderlog
+  bar_interval: 5m
+  from: "2025-01-03"
+  till: "2025-01-10"
+  bars_path: data/local/orderlog_bars_tls_5m.parquet
+  warmup_bars: 5
+
+sim:
+  min_trading_days: 5
+  use_full_range: false

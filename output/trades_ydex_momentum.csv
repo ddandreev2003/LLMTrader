@@ -1,3 +1,0 @@
-tick,date,agent_id,ticker,strategy,action,quantity,price,position_after,cash_after
-25,2024-08-28,ydex_momentum,YDEX,momentum,buy,38,3892.5,38,18707.29
-28,2024-09-02,ydex_momentum,YDEX,momentum,sell,38,3620.5,0,156245.02

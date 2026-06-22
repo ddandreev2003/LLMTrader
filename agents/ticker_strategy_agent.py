@@ -23,6 +23,20 @@ STRATEGY_SYSTEM_PROMPT = """
 При circuit_breaker или halt — всегда "hold".
 """
 
+INTRADAY_STRATEGY_SYSTEM_PROMPT = """
+Ты — intraday алгоритмический трейдер MOEX (бары {bar_interval}).
+Торгуешь только тикер {ticker}. Учитывай внутридневную динамику и регуляторные шоки.
+
+Отвечай ТОЛЬКО JSON:
+{{
+  "action": "buy" | "sell" | "hold",
+  "quantity": 1-100,
+  "reason": "краткое обоснование"
+}}
+При circuit_breaker или halt — всегда "hold".
+Не усредняй убыточную позицию без явного сигнала.
+"""
+
 
 class TickerStrategyAgent(BaseAgent):
     """Independent strategy agent for one ticker (TA + optional LLM)."""
@@ -40,6 +54,9 @@ class TickerStrategyAgent(BaseAgent):
         commission_pct: float = 0.0003,
         trade_cutoff_ticks: int = 5,
         total_ticks: int = 0,
+        proposal_mode: bool = False,
+        intraday_mode: bool = False,
+        hft_mode: bool = False,
     ):
         super().__init__(bus)
         self.agent_id = agent_id
@@ -52,6 +69,13 @@ class TickerStrategyAgent(BaseAgent):
         self.commission_pct = commission_pct
         self.trade_cutoff_ticks = trade_cutoff_ticks
         self.total_ticks = total_ticks
+        self.proposal_mode = proposal_mode
+        self.intraday_mode = intraday_mode
+        self.hft_mode = hft_mode
+        self._bar_interval = "5m"
+        self._micro_phase = "close"
+        self._bar_ohlc: dict = {}
+        self._datetime = ""
         self._tick_counter = 0
         self._current_tick = 0
         self._active_shocks: list[dict] = []
@@ -75,6 +99,11 @@ class TickerStrategyAgent(BaseAgent):
 
         self._current_tick = int(event.payload.get("tick", 0))
         self._trading_enabled = bool(event.payload.get("trading_enabled", True))
+        self._datetime = event.payload.get("datetime", "")
+        self._bar_interval = event.payload.get("bar_interval", "5m")
+        self._micro_phase = event.payload.get("micro_phase", "close")
+        bars = event.payload.get("bars") or {}
+        self._bar_ohlc = dict(bars.get(self.ticker, {}))
 
         agent_portfolios = event.payload.get("agent_portfolios", {})
         mine = agent_portfolios.get(self.agent_id, {})
@@ -106,9 +135,12 @@ class TickerStrategyAgent(BaseAgent):
             return
 
         signal = self._ta_signal()
-        if self.llm_enabled and (
+        run_llm = self.llm_enabled and (
             self._tick_counter % self.interval == 0 or self._active_shocks
-        ):
+        )
+        if self.hft_mode and self._micro_phase != "close" and not self._active_shocks:
+            run_llm = False
+        if run_llm:
             signal = await self._llm_decision(price) or signal
 
         if signal and signal.get("action") != "hold":
@@ -140,6 +172,11 @@ class TickerStrategyAgent(BaseAgent):
             if self._current_position <= 0:
                 self._entry_price = None
 
+        if self.hft_mode and self._trading_enabled:
+            signal = self._ta_signal()
+            if signal and signal.get("action") in ("buy", "sell"):
+                await self._publish_signal(signal)
+
     def _expire_shocks(self):
         remaining = []
         for shock in self._active_shocks:
@@ -170,7 +207,12 @@ class TickerStrategyAgent(BaseAgent):
         return None
 
     def _ta_signal(self) -> dict | None:
-        signal = self.strategy.signal(self._price_history, self._current_position, self.params)
+        ctx = {
+            **self.params,
+            "micro_phase": self._micro_phase,
+            "bar_ohlc": self._bar_ohlc,
+        }
+        signal = self.strategy.signal(self._price_history, self._current_position, ctx)
         if signal is None:
             return None
         return self._apply_constraints(signal)
@@ -180,10 +222,17 @@ class TickerStrategyAgent(BaseAgent):
 Тикер: {self.ticker}
 Текущая цена: {price:.2f}
 Позиция: {self._current_position}
+Datetime: {self._datetime}
+Bar interval: {self._bar_interval}
 История (последние 10): {self._price_history[-10:]}
 Активные шоки: {json.dumps(self._active_shocks, ensure_ascii=False)}
         """
-        prompt = STRATEGY_SYSTEM_PROMPT.format(ticker=self.ticker)
+        if self.intraday_mode:
+            prompt = INTRADAY_STRATEGY_SYSTEM_PROMPT.format(
+                ticker=self.ticker, bar_interval=self._bar_interval
+            )
+        else:
+            prompt = STRATEGY_SYSTEM_PROMPT.format(ticker=self.ticker)
         try:
             result = await self.ask_llm_json(prompt, user_prompt)
             return self._apply_constraints(result)
@@ -258,6 +307,7 @@ class TickerStrategyAgent(BaseAgent):
             "reason": signal.get("reason", ""),
             "agent_id": self.agent_id,
             "strategy": self.strategy.name,
+            "tick": self._current_tick,
         }
         if self._signal_debug and payload["action"] in ("buy", "sell"):
             print(
@@ -265,9 +315,16 @@ class TickerStrategyAgent(BaseAgent):
                 f"{payload['action']} qty={payload['quantity']} "
                 f"reason={payload['reason']}"
             )
+        event_type = EventType.PROPOSED_SIGNAL if self.proposal_mode else EventType.STRATEGY_SIGNAL
+        if event_type == EventType.PROPOSED_SIGNAL and payload["action"] == "hold":
+            return
+        if payload["action"] not in ("buy", "sell") or payload["quantity"] <= 0:
+            if not self.proposal_mode:
+                return
+            return
         await self.bus.publish(
             Event(
-                type=EventType.STRATEGY_SIGNAL,
+                type=event_type,
                 payload=payload,
                 source=self.agent_id,
             )

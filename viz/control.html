@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LLMSimTrade — Web Console</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="viz_common.js?v=2"></script>
+  <script src="sim_controls.js?v=1"></script>
   <style>
     :root {
       --bg: #0f1419; --card: #1a2332; --text: #e7ecf3; --muted: #8b9cb3;
@@ -45,6 +48,19 @@
     .card h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 12px; }
     .chart-wrap { position: relative; height: 280px; }
     .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+    #agent-panels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; }
+    @media (max-width: 900px) { #agent-panels { grid-template-columns: 1fr; } }
+    .agent-panel { background: #121a26; border-radius: 10px; border: 1px solid #2d3a4f; padding: 12px; font-size: 0.8rem; position: relative; overflow: hidden; }
+    .agent-panel-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+    .agent-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; padding-left: 6px; }
+    .agent-panel-title { font-weight: 600; color: var(--text); font-size: 0.9rem; }
+    .agent-panel-strategy { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
+    .agent-panel-stats { display: flex; flex-wrap: wrap; gap: 10px; padding-left: 6px; margin-bottom: 6px; }
+    .agent-panel-holdings { padding-left: 6px; color: var(--muted); margin-bottom: 8px; }
+    .agent-panel-chart-wrap { height: 72px; margin: 8px 0 8px 6px; }
+    .agent-panel-trades-title { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; padding-left: 6px; }
+    .agent-panel-trades { list-style: none; padding: 4px 6px; margin: 0; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+    .agent-panel-trades li { padding: 2px 0; border-bottom: 1px solid #1e293b; }
     .agent-card { background: #121a26; border-radius: 8px; padding: 10px; border: 1px solid #2d3a4f; font-size: 0.8rem; }
     .agent-card .id { font-weight: 600; color: var(--accent); }
     .agent-card .pnl-pos { color: var(--ok); }
@@ -62,6 +78,23 @@
     .msg.ok { color: var(--ok); }
     .spinner { display: none; color: #a855f7; font-size: 0.85rem; }
     .spinner.visible { display: inline; }
+    .ticker-tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    .ticker-tab, .filter-chip {
+      padding: 4px 12px; border-radius: 999px; border: 1px solid #2d3a4f;
+      background: #121a26; color: var(--text); cursor: pointer; font-size: 0.75rem;
+    }
+    .ticker-tab.active, .filter-chip.active { border-color: var(--accent); color: var(--accent); }
+    #candleChart { width: 100%; height: 100%; }
+    .event-filters { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+    .event-row {
+      display: grid; grid-template-columns: 64px 56px 40px 80px 48px 1fr;
+      gap: 6px; padding: 4px 0; border-bottom: 1px solid #2d3a4f; font-size: 0.72rem;
+    }
+    .event-row .ev-kind { color: var(--muted); text-transform: uppercase; }
+    .event-row.shock .ev-msg { color: var(--shock); font-weight: 600; }
+    .event-row.trade .ev-msg { color: #93c5fd; }
+    .event-row.reject .ev-msg { color: var(--halt); }
+    .muted { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -97,13 +130,14 @@
     <div class="grid">
       <div>
         <div class="card">
-          <h2>Рынок + шоки</h2>
-          <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+          <h2>Свечи 5m (T / SBER)</h2>
+          <div id="ticker-tabs" class="ticker-tabs"></div>
+          <div class="chart-wrap"><div id="candleChart"></div></div>
         </div>
         <div class="card" style="margin-top:16px">
           <h2>Equity по агентам</h2>
           <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
-          <div id="agents-grid" class="agents-grid"></div>
+          <div id="agent-panels"></div>
         </div>
       </div>
       <div>
@@ -113,6 +147,7 @@
         </div>
         <div class="card" style="margin-top:16px">
           <h2>Лента событий</h2>
+          <div id="event-filters" class="event-filters"></div>
           <div id="event-log"></div>
         </div>
       </div>
@@ -139,6 +174,7 @@
           <label>Режим рынка</label>
           <select id="cfg-market-mode">
             <option value="moex">MOEX</option>
+            <option value="orderlog_intraday">OrderLog intraday (T/SBER)</option>
             <option value="synthetic">Synthetic</option>
           </select>
         </div>
@@ -153,6 +189,7 @@
           <label>Конфиг стратегий</label>
           <select id="cfg-strategies">
             <option value="config/strategies_ru.yaml">strategies_ru.yaml</option>
+            <option value="config/strategies_intraday_tls.yaml">strategies_intraday_tls.yaml</option>
             <option value="config/strategies_portfolio_manual.yaml">strategies_portfolio_manual.yaml</option>
           </select>
         </div>
@@ -164,13 +201,21 @@
       <div style="margin-top:16px">
         <button id="btn-apply-config" class="primary">Применить</button>
         <p class="msg" id="config-msg">Изменения доступны только до старта или после Reset (tick 0).</p>
+        <div class="preset-row">
+          <span class="muted">Presets:</span>
+          <button type="button" id="preset-normal">Normal TLS</button>
+          <button type="button" id="preset-hft">HFT 5m</button>
+          <button type="button" id="preset-nft">NFT 4 agents</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
     const AGENT_COLORS = ['#3b82f6','#22c55e','#f59e0b','#a855f7','#ec4899','#14b8a6'];
-    let priceChart, equityChart, ws, pollTimer, wsFailed = false;
+    let equityChart, ws, pollTimer, wsFailed = false, lastState = null;
+    const VC = window.VizCommon;
+    const HEADER_IDS = { statusBadge: 'status-badge', tickInfo: 'tick-info', dateInfo: 'date-info' };
 
     function startPolling() {
       if (pollTimer) return;
@@ -193,6 +238,12 @@
     }
 
     function initCharts() {
+      VC.initCandleTabs('ticker-tabs', ['T', 'SBER'], (t) => {
+        VC.setActiveTicker(t);
+        if (lastState) VC.updateCandleChart(t, lastState.bar_history, lastState.shocks);
+      });
+      VC.initCandleChart('candleChart');
+      VC.initEventFilters('event-filters');
       const opts = {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { labels: { color: '#8b9cb3' } } },
@@ -201,11 +252,6 @@
           y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
         },
       };
-      priceChart = new Chart(document.getElementById('priceChart'), {
-        type: 'line',
-        data: { labels: [], datasets: [{ label: 'Benchmark', data: [], borderColor: '#3b82f6', fill: true, tension: 0.2, pointRadius: 0 }] },
-        options: opts,
-      });
       equityChart = new Chart(document.getElementById('equityChart'), {
         type: 'line', data: { labels: [], datasets: [] }, options: opts,
       });
@@ -221,45 +267,33 @@
       const tick = state.tick ?? state.current_tick ?? 0;
       const total = state.total_ticks || '—';
       document.getElementById('tick-info').textContent = `tick ${tick} / ${total}`;
-      document.getElementById('date-info').textContent = state.date || '—';
+      const dt = state.datetime || state.date || '—';
+      const interval = state.bar_interval ? ` · ${state.bar_interval}` : '';
+      const dayN = state.sim_trading_days || 0;
+      const dayM = state.sim_total_days || 0;
+      const dayPart = dayM ? ` · день ${dayN}/${dayM}` : '';
+      document.getElementById('date-info').textContent = dt + interval + dayPart;
       document.getElementById('llm-spinner').classList.toggle('visible', status === 'waiting_llm');
 
-      const hist = state.price_history || { ticks: [], benchmark: [] };
-      priceChart.data.labels = hist.ticks;
-      priceChart.data.datasets[0].data = hist.benchmark;
+      const barHist = state.bar_history || { tickers: ['T','SBER'], candles: {}, timestamps: [] };
+      VC.updateCandleChart(VC.getActiveTicker(), barHist, state.shocks);
 
-      const agentIds = Object.keys(state.agent_equity || {});
+      const hist = state.price_history || { ticks: [], benchmark: [] };
+      const agentIds = Object.keys(state.agent_equity || state.agents_meta || state.agents || {});
       equityChart.data.labels = hist.ticks;
       equityChart.data.datasets = agentIds.map((id, i) => ({
-        label: id,
+        label: VC.agentLabel(state, id),
         data: (state.agent_equity[id] || []).map(p => p.value),
         borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
         tension: 0.2, pointRadius: 0,
       }));
-      priceChart.update('none');
       equityChart.update('none');
 
-      const grid = document.getElementById('agents-grid');
-      grid.innerHTML = '';
-      for (const [id, snap] of Object.entries(state.agents || {})) {
-        const pnl = snap.pnl || 0;
-        const div = document.createElement('div');
-        div.className = 'agent-card';
-        div.innerHTML = `<div class="id">${id}</div><div>${snap.ticker || ''}</div>
-          <div>${(snap.portfolio_value || 0).toLocaleString('ru')} ₽</div>
-          <div class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('ru')} ₽</div>`;
-        grid.appendChild(div);
-      }
+      VC.renderAgentPanels('agent-panels', state, Chart);
 
-      document.getElementById('shock-list').innerHTML = (state.shocks || []).slice().reverse().map(s =>
-        `<div class="shock-item" style="border-left-color:${s.color || '#f59e0b'}">
-          <strong>tick ${s.tick}</strong> · ${s.type} ${s.price_impact_pct > 0 ? '+' : ''}${s.price_impact_pct}%
-          <div style="color:#8b9cb3;margin-top:4px">${s.description || ''}</div></div>`
-      ).join('') || '<div style="color:#8b9cb3">Шоков пока нет</div>';
-
-      document.getElementById('event-log').innerHTML = (state.recent_events || []).slice().reverse().map(e =>
-        `<div class="event ${e.kind}">${e.message}</div>`
-      ).join('');
+      VC.renderShockList('shock-list', state.shocks);
+      VC.renderEventLog('event-log', state.recent_events, true);
+      VC.flashLatestShock(state.shocks);
 
       const editable = ['idle', 'paused'].includes(status) && tick === 0;
       document.getElementById('btn-apply-config').disabled = !editable;
@@ -295,15 +329,30 @@
       document.getElementById('speed-val').textContent = e.target.value + 'ms';
     });
 
-    document.getElementById('btn-start').onclick = () => api('/api/sim/start', { method: 'POST' });
-    document.getElementById('btn-pause').onclick = () => api('/api/sim/pause', { method: 'POST' });
-    document.getElementById('btn-step').onclick = () => api('/api/sim/step', { method: 'POST' });
-    document.getElementById('btn-play').onclick = () => {
-      const ms = parseInt(document.getElementById('speed').value, 10);
-      api('/api/sim/play', { method: 'POST', body: JSON.stringify({ interval_ms: ms }) });
+    document.getElementById('preset-normal').onclick = async () => {
+      await SimControls.applyPreset('config/strategies_intraday_tls.yaml');
+      loadConfig();
     };
-    document.getElementById('btn-stop').onclick = () => api('/api/sim/stop', { method: 'POST' });
-    document.getElementById('btn-reset').onclick = () => api('/api/sim/reset', { method: 'POST' });
+    document.getElementById('preset-hft').onclick = async () => {
+      await SimControls.applyPreset('config/strategies_intraday_hft.yaml');
+      loadConfig();
+    };
+    document.getElementById('preset-nft').onclick = async () => {
+      await SimControls.applyPreset('config/strategies_intraday_nft.yaml');
+      loadConfig();
+    };
+    document.getElementById('preset-dev').onclick = async () => {
+      await api('/api/config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          market_mode: 'orderlog_intraday',
+          portfolio_config: 'config/portfolio_intraday_hft.yaml',
+          strategies_config: 'config/strategies_intraday_hft.yaml',
+          shock_backend: 'legacy',
+        }),
+      });
+      loadConfig();
+    };
 
     document.getElementById('btn-apply-config').onclick = async () => {
       const msg = document.getElementById('config-msg');
@@ -342,9 +391,8 @@
     }
 
     initCharts();
-    connectWs();
+    SimControls.initWebControls(updateUI);
     loadConfig();
-    api('/api/state').then(r => r.json()).then(updateUI).catch(() => {});
   </script>
 </body>
 </html>

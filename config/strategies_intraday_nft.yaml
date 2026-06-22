@@ -1,0 +1,75 @@
+agent_mode: nft_portfolio
+
+strategy_agents:
+  - id: crypto_punks
+    type: portfolio
+    display_name: CryptoPunks
+    nft_color: "#638596"
+    universe: [T, SBER]
+    portfolio_targets:
+      T: 0.55
+      SBER: 0.45
+    strategy: momentum
+    signal_mode: true
+    llm_enabled: false
+    rebalance_interval_ticks: 1
+    params:
+      roc_period: 8
+      default_quantity: 10
+      target_weight_pct: 0.45
+
+  - id: bored_ape
+    type: portfolio
+    display_name: Bored Ape Yacht Club
+    nft_color: "#f59e0b"
+    universe: [T, SBER]
+    portfolio_targets:
+      T: 0.50
+      SBER: 0.50
+    strategy: mean_reversion
+    signal_mode: true
+    llm_enabled: false
+    rebalance_interval_ticks: 1
+    params:
+      bb_period: 10
+      std_mult: 1.2
+      default_quantity: 12
+      target_weight_pct: 0.45
+
+  - id: azuki
+    type: portfolio
+    display_name: Azuki
+    nft_color: "#e11d48"
+    universe: [T, SBER]
+    portfolio_targets:
+      T: 0.45
+      SBER: 0.55
+    strategy: rsi
+    signal_mode: true
+    llm_enabled: false
+    rebalance_interval_ticks: 1
+    params:
+      period: 10
+      default_quantity: 12
+      target_weight_pct: 0.45
+
+  - id: pudgy_penguins
+    type: portfolio
+    display_name: Pudgy Penguins
+    nft_color: "#3b82f6"
+    universe: [T, SBER]
+    portfolio_targets:
+      T: 0.50
+      SBER: 0.50
+    strategy: scalp_5m
+    signal_mode: true
+    hft_mode: true
+    llm_enabled: false
+    rebalance_interval_ticks: 1
+    params:
+      default_quantity: 15
+      impulse_threshold: 0.0001
+      scale_out_pct: 0.5
+      target_weight_pct: 0.45
+
+coordinator: null

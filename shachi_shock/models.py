@@ -43,6 +43,12 @@ class MarketSnapshot(BaseModel):
     total_trades: int = 0
     halted: bool = False
     volatility_mult: float = 1.0
+    datetime: str = ""
+    session_date: str = ""
+    bar_interval: str = "5m"
+    intraday: bool = False
+    prices: dict[str, float] = Field(default_factory=dict)
+    tickers: list[str] = Field(default_factory=list)
 
 
 class RegulatorMessage(Message):

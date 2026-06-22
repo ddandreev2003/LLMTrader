@@ -200,8 +200,10 @@ class AgentPortfolioRegistry:
         self.bus = bus
         self.export_dir = Path(export_dir)
         self._portfolios: dict[str, AgentPortfolio] = {}
-        self._traded_this_tick: set[str] = set()
+        self._step_trade_counts: dict[str, int] = {}
         self._current_tick = -1
+        self._current_micro_step = -1
+        self.max_trades_per_step = 1
         self._last_prices: dict[str, float] = {}
         self._exposure_history: list[dict] = []
 
@@ -255,16 +257,21 @@ class AgentPortfolioRegistry:
         qty = int(event.payload.get("quantity", 0))
         price = float(event.payload.get("price", 0))
         tick = event.payload.get("tick", 0)
+        micro_step = int(event.payload.get("micro_step", 0))
 
-        if tick != self._current_tick:
-            self._traded_this_tick = set()
+        if tick != self._current_tick or micro_step != self._current_micro_step:
+            self._step_trade_counts = {}
             self._current_tick = tick
+            self._current_micro_step = micro_step
 
         trade_key = f"{agent_id}:{ticker}"
-        if trade_key in self._traded_this_tick:
+        if self._step_trade_counts.get(trade_key, 0) >= self.max_trades_per_step:
             return Event(
                 type=EventType.ORDER_REJECTED,
-                payload={"reason": "cooldown: one trade per agent per tick", "ticker": ticker},
+                payload={
+                    "reason": f"max {self.max_trades_per_step} trades per micro-step",
+                    "ticker": ticker,
+                },
                 source="PortfolioRegistry",
             )
 
@@ -320,7 +327,6 @@ class AgentPortfolioRegistry:
         if not pf.apply_fill(ticker, action, qty, price, tick, trade_date):
             return
 
-        self._traded_this_tick.add(f"{agent_id}:{ticker}")
         self.trades.append(pf.trades[-1])
         self.positions[ticker] = sum(
             p.positions.get(ticker, 0) for p in self._portfolios.values()

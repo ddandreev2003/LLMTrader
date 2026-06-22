@@ -133,7 +133,104 @@ python scripts/download_moex.py --config config/portfolio_ru.yaml
 
 ---
 
-### 2. Основная симуляция (MOEX)
+### 2b. Intraday OrderLog (T / SBER)
+
+Режим внутридневной торговли на 5-минутных барах из MOEX OrderLog с двумя LLM-агентами (T, SBER) и портфельным координатором.
+
+| Шаг | Команда |
+|-----|---------|
+| 1 | `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt` |
+| 2 | `cp .env.example .env` + ключ RouterAI (`OPENAI_API_KEY`) |
+| 3 | `python scripts/preprocess_orderlog_bars.py` (если нет parquet; `--force` для пересборки OHLC) |
+| 4a Batch | `./scripts/run_intraday.sh` или `python main.py` → http://127.0.0.1:8765/dashboard.html |
+| 4b Web UI | `WEB_UI=1 ./scripts/run_intraday.sh` или `python scripts/web_server.py` → http://127.0.0.1:8765/ (control + свечи) |
+| 4c HFT | `HFT=1 ./scripts/run_intraday.sh` — 4 micro-шага на бар (open→high→low→close), до 3 сделок на шаг |
+| 4d NFT | `NFT=1 ./scripts/run_intraday.sh` — 4 NFT-агента, портфель T+SBER, ~5–7 торг. дней, панели на дашборде |
+
+Быстрый dev-run: `SIM_N_TICKS=100 python main.py`. NFT: `NFT=1 ./scripts/run_intraday.sh`.
+
+**Preprocess** (один раз, нужны zip в `datasets/moex/orderlog/`):
+
+```bash
+python scripts/preprocess_orderlog_bars.py \
+  --tickers T SBER \
+  --interval 5m \
+  --out data/local/orderlog_bars_tls_5m.parquet
+```
+
+**Запуск симуляции** (обёртка проверяет venv, `.env`, parquet):
+
+```bash
+./scripts/run_intraday.sh
+```
+
+Или вручную:
+
+```bash
+cp .env.example .env   # OPENAI_API_KEY
+MARKET_MODE=orderlog_intraday \
+PORTFOLIO_CONFIG=config/portfolio_intraday_tls.yaml \
+STRATEGIES_CONFIG=config/strategies_intraday_tls.yaml \
+SHOCK_INTERVAL=36 \
+python main.py
+```
+
+Дашборд: свечи 5m (T/SBER), equity, структурированная лента событий с фильтрами. В header отображается `micro_phase` при HFT. Панель управления (Start/Pause/Step/Play) доступна и на dashboard, и на control-странице при Web UI.
+
+**Персистентные шоки:** `price_impact_pct` из шока умножает cumulative `_price_multiplier` в `IntradayMarketEngine`; последующие бары берут OHLC из parquet × multiplier (не сбрасывается на следующем баре). Настройка в `config/portfolio_intraday_tls.yaml`:
+
+```yaml
+shock_price:
+  persistent: true
+  impact_decay_per_bar: 1.0   # 0.995 — медленное затухание
+```
+
+**HFT preset** (`HFT=1` или preset-кнопка на control):
+
+```bash
+HFT=1 ./scripts/run_intraday.sh
+# или
+MARKET_MODE=orderlog_intraday \
+PORTFOLIO_CONFIG=config/portfolio_intraday_hft.yaml \
+STRATEGIES_CONFIG=config/strategies_intraday_hft.yaml \
+python main.py
+```
+
+- [`config/portfolio_intraday_hft.yaml`](config/portfolio_intraday_hft.yaml) — `trading.hft_mode: true`, `micro_steps: 4`, `max_trades_per_step: 3`
+- [`config/strategies_intraday_hft.yaml`](config/strategies_intraday_hft.yaml) — 2 агента `scalp_5m` (T, SBER), coordinator `llm_enabled: false` (TA на каждом micro-step)
+
+**NFT preset** (`NFT=1`):
+
+```bash
+NFT=1 ./scripts/run_intraday.sh
+```
+
+Четыре независимых агента с именами NFT-коллекций; у каждого свой портфель **T + SBER**:
+
+| Агент | Стратегия | Веса |
+|-------|-----------|------|
+| CryptoPunks | momentum | T 55% / SBER 45% |
+| Bored Ape Yacht Club | mean_reversion | 50/50 |
+| Azuki | rsi | T 45% / SBER 55% |
+| Pudgy Penguins | scalp_5m (HFT) | 50/50 |
+
+Конфиги: [`config/portfolio_intraday_nft.yaml`](config/portfolio_intraday_nft.yaml) (данные 03–10 янв, ~5 торг. дней), [`config/strategies_intraday_nft.yaml`](config/strategies_intraday_nft.yaml). На дашборде — отдельная панель на агента (equity sparkline, позиции T/SBER, последние сделки).
+
+Конфиги (обычный режим):
+- [`config/portfolio_intraday_tls.yaml`](config/portfolio_intraday_tls.yaml) — T, SBER
+- [`config/strategies_intraday_tls.yaml`](config/strategies_intraday_tls.yaml) — 2 ticker-агента + `tls_coordinator`
+
+Архитектура: ticker-агенты публикуют `PROPOSED_SIGNAL` → координатор LLM → `STRATEGY_SIGNAL` → `IntradayMarketEngine`.
+
+Для dev без LLM API:
+
+```bash
+# в strategies_intraday_tls.yaml: llm_enabled: false у агентов и coordinator
+```
+
+---
+
+### 3. Основная симуляция (MOEX daily)
 
 ```bash
 python main.py
@@ -170,7 +267,7 @@ VIZ_PORT=9000 python main.py
 
 ---
 
-### 3. Синтетический режим (один актив, legacy)
+### 4. Синтетический режим (один актив, legacy)
 
 ```bash
 MARKET_MODE=synthetic python main.py
@@ -180,7 +277,7 @@ MARKET_MODE=synthetic python main.py
 
 ---
 
-### 4. Standalone-запуск только шоков (Hydra)
+### 5. Standalone-запуск только шоков (Hydra)
 
 Без торговли — только цикл регуляторных агентов:
 
@@ -190,7 +287,7 @@ python scripts/shock_main.py task=regulatory_shock agent=regulator_multi
 
 ---
 
-### 5. Тесты
+### 6. Тесты
 
 ```bash
 pytest tests/ -q
@@ -198,7 +295,7 @@ pytest tests/ -q
 
 ---
 
-### 6. Отладка сигналов стратегий
+### 7. Отладка сигналов стратегий
 
 Логирование buy/sell с tick, quantity и reason:
 

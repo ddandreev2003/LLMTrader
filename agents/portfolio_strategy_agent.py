@@ -54,9 +54,17 @@ class PortfolioStrategyAgent(BaseAgent):
         trade_cutoff_ticks: int = 5,
         total_ticks: int = 0,
         signal_mode: bool = False,
+        display_name: str = "",
+        nft_color: str = "#3b82f6",
+        intraday_mode: bool = False,
+        hft_mode: bool = False,
     ):
         super().__init__(bus)
         self.agent_id = agent_id
+        self.display_name = display_name or agent_id
+        self.nft_color = nft_color
+        self.intraday_mode = intraday_mode
+        self.hft_mode = hft_mode
         self.universe = universe
         self.ticker = universe[0] if universe else ""  # legacy compat
         self.portfolio_targets = _normalize_weights(portfolio_targets)
@@ -83,11 +91,17 @@ class PortfolioStrategyAgent(BaseAgent):
         self._portfolio_value = 0.0
         self._targets = dict(self.portfolio_targets)
         self._pending_orders: list[dict] = []
+        self._micro_phase = "close"
+        self._bars: dict = {}
 
     async def on_tick(self, event: Event):
         prices = event.payload.get("prices", {})
         self._current_tick = int(event.payload.get("tick", 0))
         self._trading_enabled = bool(event.payload.get("trading_enabled", True))
+        self._micro_phase = event.payload.get("micro_phase", "close")
+        self._bars = event.payload.get("bars") or {}
+        if event.payload.get("hft_mode") is not None:
+            self.hft_mode = bool(event.payload.get("hft_mode"))
         total_ticks = int(event.payload.get("total_ticks", 0))
         if total_ticks > 0:
             self.total_ticks = total_ticks
@@ -136,18 +150,25 @@ class PortfolioStrategyAgent(BaseAgent):
         await self._schedule_rebalance(prices)
 
     async def _signal_mode_tick(self, prices: dict[str, float]):
-        """Run TA per ticker; combine with manual targets as max weight cap."""
+        """Run TA per ticker; publish signals for each ticker with edge."""
+        bars = self._bars
         for ticker in self.universe:
             if ticker not in prices:
                 continue
             pos = self._positions.get(ticker, 0)
+            ctx = {
+                **self.params,
+                "micro_phase": self._micro_phase,
+                "bar_ohlc": bars.get(ticker) or {},
+            }
             signal = self.strategy.signal(
-                self._price_histories.get(ticker, []), pos, self.params
+                self._price_histories.get(ticker, []), pos, ctx
             )
             if signal and signal.get("action") in ("buy", "sell"):
-                signal["ticker"] = ticker
-                await self._publish_signal(signal)
-                return
+                qty = int(signal.get("quantity", 0))
+                if qty > 0:
+                    signal["ticker"] = ticker
+                    await self._publish_signal(signal)
 
     async def _schedule_rebalance(self, prices: dict[str, float]):
         pv = self._portfolio_value
@@ -198,6 +219,23 @@ class PortfolioStrategyAgent(BaseAgent):
             self._entry_prices[ticker] = price
         elif action == "sell":
             self._positions[ticker] = max(0, self._positions.get(ticker, 0) - qty)
+
+        if self.hft_mode and self._trading_enabled and not self._is_in_trade_cutoff():
+            bars = self._bars
+            pos = self._positions.get(ticker, 0)
+            ctx = {
+                **self.params,
+                "micro_phase": self._micro_phase,
+                "bar_ohlc": bars.get(ticker) or {},
+            }
+            follow = self.strategy.signal(
+                self._price_histories.get(ticker, []), pos, ctx
+            )
+            if follow and follow.get("action") in ("buy", "sell"):
+                qty_f = int(follow.get("quantity", 0))
+                if qty_f > 0:
+                    follow["ticker"] = ticker
+                    await self._publish_signal(follow)
 
     def _expire_shocks(self):
         remaining = []

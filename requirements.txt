@@ -13,6 +13,7 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 websockets>=12.0
 httpx>=0.27.0
+pyarrow>=14.0.0
 
 # Shachi (SakanaAI) — полный пакет не ставится (camel-ai==0.2.2 yanked).
 # Используется vendored shachi_shock/vendor/base.py (Apache-2.0).

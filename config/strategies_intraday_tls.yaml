@@ -1,0 +1,32 @@
+strategy_agents:
+  - id: t_momentum
+    ticker: T
+    strategy: momentum
+    llm_enabled: true
+    call_interval_ticks: 12
+    params:
+      roc_period: 20
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.02
+      take_profit_pct: 0.04
+
+  - id: sber_sma
+    ticker: SBER
+    strategy: sma_cross
+    llm_enabled: true
+    call_interval_ticks: 12
+    params:
+      sma_period: 20
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.02
+      take_profit_pct: 0.04
+
+coordinator:
+  id: tls_coordinator
+  universe: [T, SBER]
+  llm_enabled: true
+  rebalance_interval_ticks: 6
+  max_total_exposure_pct: 0.95
+  default_targets:
+    T: 0.50
+    SBER: 0.50

@@ -15,9 +15,11 @@ class ShachiShockBridge:
         shock_interval_ticks: int = 60,
         model: str | None = None,
         temperature: float = 0.5,
+        controller=None,
     ):
         self.bus = bus
         self.interval = shock_interval_ticks
+        self.controller = controller
         self._tick_counter = 0
         self._env = RegulatoryShockEnvironment()
         self._agents = create_regulator_agents_for_bridge(
@@ -38,14 +40,25 @@ class ShachiShockBridge:
             total_trades=int(event.payload.get("total_trades", 0)),
             halted=bool(event.payload.get("halted", False)),
             volatility_mult=float(event.payload.get("volatility_mult", 1.0)),
+            datetime=str(event.payload.get("datetime", "")),
+            session_date=str(event.payload.get("session_date", event.payload.get("date", ""))),
+            bar_interval=str(event.payload.get("bar_interval", "")),
+            intraday=bool(event.payload.get("intraday", False)),
+            prices=dict(event.payload.get("prices", {})),
+            tickers=list(event.payload.get("tickers", [])),
         )
 
         async with self._lock:
+            if self.controller:
+                self.controller.set_waiting_llm(True)
             try:
                 shocks = await run_shock_cycle(self._env, self._agents, snapshot)
             except Exception as exc:
                 print(f"[ShachiShockBridge] Ошибка LLM/агентов: {exc}")
                 return
+            finally:
+                if self.controller:
+                    self.controller.set_waiting_llm(False)
 
         for shock in shocks:
             shock["tick"] = snapshot.tick

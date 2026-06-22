@@ -20,6 +20,9 @@ class EventType(Enum):
 
     # Стратегия
     STRATEGY_SIGNAL = "strategy_signal"
+    PROPOSED_SIGNAL = "proposed_signal"
+    BAR_PROPOSALS_READY = "bar_proposals_ready"
+    PRICES_UPDATED = "prices_updated"
     STRATEGY_UPDATED = "strategy_updated"
 
     # Система

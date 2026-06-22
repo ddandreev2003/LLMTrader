@@ -1,0 +1,37 @@
+strategy_agents:
+  - id: t_scalp
+    ticker: T
+    strategy: scalp_5m
+    llm_enabled: false
+    call_interval_ticks: 1
+    params:
+      default_quantity: 23
+      impulse_threshold: 0.0001
+      scale_out_pct: 0.5
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.008
+      take_profit_pct: 0.015
+
+  - id: sber_scalp
+    ticker: SBER
+    strategy: scalp_5m
+    llm_enabled: false
+    call_interval_ticks: 1
+    params:
+      default_quantity: 30
+      impulse_threshold: 0.0001
+      scale_out_pct: 0.5
+      target_weight_pct: 0.90
+      stop_loss_pct: 0.008
+      take_profit_pct: 0.012
+
+coordinator:
+  id: hft_coordinator
+  universe: [T, SBER]
+  llm_enabled: false
+  hft_mode: true
+  rebalance_interval_ticks: 1
+  max_total_exposure_pct: 0.95
+  default_targets:
+    T: 0.50
+    SBER: 0.50

@@ -26,6 +26,10 @@ class StateResponse(BaseModel):
     current_tick: int
     total_ticks: int
     date: str = ""
+    datetime: str = ""
+    bar_interval: str = "5m"
+    micro_phase: str = ""
+    hft_mode: bool = False
     halted: bool = False
     auto_interval_ms: int = 500
     config: dict[str, Any] = Field(default_factory=dict)
@@ -33,5 +37,11 @@ class StateResponse(BaseModel):
     prices: dict[str, float] = Field(default_factory=dict)
     shocks: list[dict[str, Any]] = Field(default_factory=list)
     recent_events: list[dict[str, Any]] = Field(default_factory=list)
+    event_counts: dict[str, int] = Field(default_factory=dict)
     price_history: dict[str, Any] = Field(default_factory=dict)
+    bar_history: dict[str, Any] = Field(default_factory=dict)
     agent_equity: dict[str, Any] = Field(default_factory=dict)
+    agents_meta: dict[str, Any] = Field(default_factory=dict)
+    agent_trades: dict[str, Any] = Field(default_factory=dict)
+    sim_trading_days: int = 0
+    sim_total_days: int = 0

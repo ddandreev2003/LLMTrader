@@ -2,8 +2,14 @@
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
 trades_history.csv
 simulation_report.txt
 data/cache/
 data/local/
 outputs/
+datasets/
+output/
+viz/live_state.json
+notebooks/.ipynb_checkpoints/
+*.parquet

@@ -24,17 +24,30 @@ class RegulatorObservation(Observation[RegulatorMessage]):
         lines = [
             f"Вы — {self.role}.",
             f"Тик: {s.tick}",
-            f"Цена: {s.price:.2f}",
+            f"Цена (benchmark): {s.price:.2f}",
             f"PnL портфеля: {s.portfolio_pnl:.2f}",
             f"Позиция: {s.position}",
             f"Сделок: {s.total_trades}",
             f"Торговля остановлена: {s.halted}",
             f"Множитель волатильности: {s.volatility_mult:.2f}",
             f"Допустимые типы шоков: {', '.join(self.allowed_shocks)}",
-            "",
-            "Решите, нужен ли регуляторный шок. Ответ — строго JSON по схеме RegulatorShockResponse.",
-            "Если шока нет — shock_occurred: false.",
         ]
+        if s.intraday:
+            lines.extend(
+                [
+                    f"Intraday сессия: {s.session_date} {s.datetime}",
+                    f"Bar interval: {s.bar_interval}",
+                    f"Тикеры: {', '.join(s.tickers) if s.tickers else 'T, SBER'}",
+                    f"Цены: {s.prices}",
+                ]
+            )
+        lines.extend(
+            [
+                "",
+                "Решите, нужен ли регуляторный шок. Ответ — строго JSON по схеме RegulatorShockResponse.",
+                "Если шока нет — shock_occurred: false.",
+            ]
+        )
         for msg in self.messages:
             lines.append(f"[{msg.role}] {msg.text}")
         return "\n".join(lines)

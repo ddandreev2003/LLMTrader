@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 import yaml
 
+from agents.coordinator_agent import create_intraday_agents_from_config
 from agents.live_viz_agent import LiveVizAgent
 from agents.portfolio_strategy_agent import create_strategy_agents_from_config
 from agents.report_agent import ReportAgent
@@ -16,7 +17,9 @@ from agents.shock_agent import ShockAgent
 from agents.strategy_agent import StrategyAgent
 from core.agent_portfolio import AgentPortfolioRegistry
 from core.data.moex_loader import compute_warmup_ticks, load_from_portfolio_config
+from core.data.orderlog_bars import compute_warmup_bars, load_orderlog_ohlc, resolve_sim_tick_count
 from core.event_bus import EventBus
+from core.intraday_market import IntradayMarketEngine, parse_intraday_engine_config
 from core.market import MarketEngine
 from core.multi_asset_market import MultiAssetMarketEngine
 from core.portfolio import Portfolio
@@ -56,6 +59,7 @@ class SimulationSession:
         self.price_data = None
         self.warmup_ticks = 0
         self.strategy_agents: list = []
+        self.coordinator = None
 
     def _on_viz_state(self, viz_state: dict):
         if self.on_state_change:
@@ -118,7 +122,9 @@ class SimulationSession:
         backend = str(self._config.get("shock_backend", "legacy")).strip().lower()
         if backend == "legacy":
             return ShockAgent(bus, shock_interval_ticks=shock_interval)
-        return ShachiShockBridge(bus, shock_interval_ticks=shock_interval)
+        return ShachiShockBridge(
+            bus, shock_interval_ticks=shock_interval, controller=self.controller
+        )
 
     def build(self):
         """Construct bus, agents, portfolio, market (does not start loop)."""
@@ -182,6 +188,94 @@ class SimulationSession:
                 total_ticks=n_ticks,
                 auto_interval_ms=int(self._config.get("auto_play_interval_ms", 500)),
             )
+        elif market_mode == "orderlog_intraday":
+            portfolio_cfg = self._load_portfolio_yaml()
+            data_cfg = portfolio_cfg.get("data", {})
+            bars_path = self.root / data_cfg.get("bars_path", "data/local/orderlog_bars_tls_5m.parquet")
+            if not bars_path.exists():
+                raise FileNotFoundError(
+                    f"Bars file not found: {bars_path}. Run scripts/preprocess_orderlog_bars.py"
+                )
+            self.price_data, ohlc_data = load_orderlog_ohlc(portfolio_cfg, root=self.root)
+            engine_cfg = parse_intraday_engine_config(portfolio_cfg)
+            warmup_bars = compute_warmup_bars(
+                self.price_data, int(data_cfg.get("warmup_bars", 24))
+            )
+            if portfolio_cfg.get("trading", {}).get("warmup_bars") is not None:
+                warmup_bars = int(portfolio_cfg["trading"]["warmup_bars"])
+            self.warmup_ticks = warmup_bars
+
+            p_cfg = portfolio_cfg.get("portfolio", {})
+            trade_cutoff_bars = int(
+                p_cfg.get("trade_cutoff_bars", p_cfg.get("trade_cutoff_ticks", 6))
+            )
+            if portfolio_cfg.get("trading", {}).get("trade_cutoff_bars") is not None:
+                trade_cutoff_bars = int(portfolio_cfg["trading"]["trade_cutoff_bars"])
+            total_capital = float(p_cfg.get("initial_cash_rub", 1_000_000))
+            bar_interval = data_cfg.get("bar_interval", "5m")
+
+            strategies_path = self._config.get(
+                "strategies_config", "config/strategies_intraday_tls.yaml"
+            )
+            ticker_agents, self.coordinator = create_intraday_agents_from_config(
+                bus, self.root / strategies_path, portfolio_cfg=portfolio_cfg
+            )
+            self.strategy_agents = ticker_agents
+
+            n_ticks = resolve_sim_tick_count(
+                self.price_data,
+                portfolio_cfg,
+                env_sim_n_ticks=os.environ.get("SIM_N_TICKS"),
+                config_sim_n_ticks=self._config.get("sim_n_ticks"),
+            )
+
+            portfolio = AgentPortfolioRegistry(
+                bus,
+                agents=self.strategy_agents,
+                total_capital=total_capital,
+                max_position_pct=float(p_cfg.get("agent_max_position_pct", 0.95)),
+                commission_pct=float(p_cfg.get("commission_pct", 0.0003)),
+            )
+            portfolio.max_trades_per_step = engine_cfg["max_trades_per_step"]
+
+            shock_interval = int(self._config.get("shock_interval", 36))
+            for agent in self.strategy_agents:
+                agent.total_ticks = n_ticks
+
+            shock_backend = self._create_shock_backend(bus, shock_interval)
+            report_agent = ReportAgent(bus)
+            self.live_viz = LiveVizAgent(
+                bus, agents=self.strategy_agents, max_history=min(n_ticks, 5000)
+            )
+            if self.on_state_change:
+                self.live_viz.set_state_callback(self._on_viz_state)
+
+            portfolio.register()
+            shock_backend.register()
+            for agent in self.strategy_agents:
+                agent.register()
+            if self.coordinator:
+                self.coordinator.register()
+            report_agent.register()
+            self.live_viz.register()
+
+            trading_days = len({ts.date() for ts in self.price_data.index[:n_ticks]})
+            self.live_viz.set_sim_scope(n_ticks, trading_days)
+
+            self.market = IntradayMarketEngine(
+                bus,
+                price_data=self.price_data,
+                portfolio=portfolio,
+                warmup_bars=warmup_bars,
+                trade_cutoff_bars=trade_cutoff_bars,
+                bar_interval=bar_interval,
+                ohlc_data=ohlc_data,
+                **engine_cfg,
+            )
+            self.controller.configure(
+                total_ticks=n_ticks,
+                auto_interval_ms=int(self._config.get("auto_play_interval_ms", 500)),
+            )
         else:
             n_ticks = int(self._config.get("sim_n_ticks") or 300)
             shock_interval = int(self._config.get("shock_interval", 60))
@@ -230,6 +324,10 @@ class SimulationSession:
             **ctrl,
             "tick": ctrl["current_tick"],
             "date": viz_state.get("date", ""),
+            "datetime": viz_state.get("datetime", ""),
+            "bar_interval": viz_state.get("bar_interval", "5m"),
+            "micro_phase": viz_state.get("micro_phase", ""),
+            "hft_mode": viz_state.get("hft_mode", False),
             "halted": viz_state.get("halted", False),
             "benchmark_price": viz_state.get("benchmark_price", 0),
             "prices": viz_state.get("prices", {}),
@@ -237,8 +335,14 @@ class SimulationSession:
             "shocks": viz_state.get("shocks", []),
             "active_shocks": viz_state.get("active_shocks", []),
             "price_history": viz_state.get("price_history", {}),
+            "bar_history": viz_state.get("bar_history", {}),
             "agent_equity": viz_state.get("agent_equity", {}),
+            "agent_trades": viz_state.get("agent_trades", {}),
+            "agents_meta": viz_state.get("agents_meta", {}),
+            "sim_trading_days": viz_state.get("sim_trading_days", 0),
+            "sim_total_days": viz_state.get("sim_total_days", 0),
             "recent_events": viz_state.get("recent_events", []),
+            "event_counts": viz_state.get("event_counts", {}),
             "config": self.get_config(),
             "warmup_ticks": self.warmup_ticks,
         }
@@ -278,4 +382,5 @@ class SimulationSession:
         self._run_task = None
         self.price_data = None
         self.strategy_agents = []
+        self.coordinator = None
         self._notify_state()
