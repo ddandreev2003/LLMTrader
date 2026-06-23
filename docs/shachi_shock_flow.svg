@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Shachi shock generation flow</title>
+  <desc id="desc">Horizontal flow diagram showing how Shachi creates regulatory shocks from market ticks using three LLM regulator agents, vote aggregation, and market application.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef2ff"/>
+    </linearGradient>
+
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.14"/>
+    </filter>
+
+    <marker id="arrow" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M 1 1 L 11 6 L 1 11 Z" fill="#475569"/>
+    </marker>
+
+    <style>
+      .title { font: 700 38px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #475569; }
+      .box-title { font: 700 19px Arial, sans-serif; fill: #0f172a; }
+      .box-text { font: 400 15px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 13px Arial, sans-serif; fill: #475569; }
+      .badge { font: 700 13px Arial, sans-serif; fill: #ffffff; letter-spacing: 0.5px; }
+      .priority { font: 700 14px Arial, sans-serif; fill: #7c2d12; }
+      .arrow { stroke: #475569; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .thin-arrow { stroke: #64748b; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #94a3b8; stroke-width: 2; stroke-dasharray: 7 7; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <text x="80" y="72" class="title">0: Shachi A>7405B @53C;OB>@=K9 H>:</text>
+  <text x="80" y="108" class="subtitle">>@87>=B0;L=0O AE5<0: >B @K=>G=>3> B8:0 4> A>1KB8O SHOCK_TRIGGERED 8 ?@8<5=5=8O MDD5:B0 : @K=:C</text>
+
+  <!-- Main pipeline boxes -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="185" width="180" height="120" rx="22" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+    <text x="160" y="224" text-anchor="middle" class="box-title">Market Engine</text>
+    <text x="160" y="254" text-anchor="middle" class="box-text">?C1;8:C5B TICK</text>
+    <text x="160" y="278" text-anchor="middle" class="small">F5=K, PnL, ?>78F88</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="315" y="185" width="205" height="120" rx="22" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2"/>
+    <text x="417.5" y="218" text-anchor="middle" class="box-title">ShachiShockBridge</text>
+    <text x="417.5" y="249" text-anchor="middle" class="box-text">?@>25@O5B</text>
+    <text x="417.5" y="272" text-anchor="middle" class="box-text">SHOCK_INTERVAL</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="585" y="185" width="215" height="120" rx="22" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+    <text x="692.5" y="218" text-anchor="middle" class="box-title">MarketSnapshot</text>
+    <text x="692.5" y="249" text-anchor="middle" class="box-text">A=8<>: @K=:0</text>
+    <text x="692.5" y="272" text-anchor="middle" class="small">tick, price, PnL, trades</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="850" y="185" width="230" height="120" rx="22" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+    <text x="965" y="216" text-anchor="middle" class="box-title">Regulatory Env</text>
+    <text x="965" y="247" text-anchor="middle" class="box-text">D>@<8@C5B observation</text>
+    <text x="965" y="271" text-anchor="middle" class="small">4;O 3 LLM-@53C;OB>@>2</text>
+  </g>
+
+  <!-- No shock branch -->
+  <path d="M 417 305 C 420 390, 315 410, 242 395" class="dash"/>
+  <g>
+    <rect x="80" y="350" width="205" height="82" rx="18" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+    <text x="182.5" y="382" text-anchor="middle" class="box-title">=B5@20; =5 =0AB0;</text>
+    <text x="182.5" y="409" text-anchor="middle" class="box-text">H>: =5 35=5@8@C5BAO</text>
+  </g>
+
+  <!-- Main arrows -->
+  <path d="M 250 245 L 305 245" class="arrow"/>
+  <path d="M 520 245 L 575 245" class="arrow"/>
+  <path d="M 800 245 L 840 245" class="arrow"/>
+
+  <!-- Agent fan out -->
+  <path d="M 1080 245 C 1135 245, 1130 150, 1185 150" class="thin-arrow"/>
+  <path d="M 1080 245 L 1185 245" class="thin-arrow"/>
+  <path d="M 1080 245 C 1135 245, 1130 340, 1185 340" class="thin-arrow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1185" y="95" width="250" height="110" rx="22" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <rect x="1210" y="77" width="104" height="28" rx="14" fill="#16a34a"/>
+    <text x="1262" y="96" text-anchor="middle" class="badge">AGENT 0</text>
+    <text x="1310" y="132" text-anchor="middle" class="box-title">&5=B@0;L=K9 10=:</text>
+    <text x="1310" y="162" text-anchor="middle" class="box-text">rate_hike</text>
+    <text x="1310" y="184" text-anchor="middle" class="box-text">position_limit</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1185" y="220" width="250" height="110" rx="22" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+    <rect x="1210" y="202" width="104" height="28" rx="14" fill="#dc2626"/>
+    <text x="1262" y="221" text-anchor="middle" class="badge">AGENT 1</text>
+    <text x="1310" y="257" text-anchor="middle" class="box-title">8@652>9 @53C;OB>@</text>
+    <text x="1310" y="287" text-anchor="middle" class="box-text">halt / circuit_breaker</text>
+    <text x="1310" y="309" text-anchor="middle" class="box-text">short_ban</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1185" y="345" width="250" height="110" rx="22" fill="#fae8ff" stroke="#d946ef" stroke-width="2"/>
+    <rect x="1210" y="327" width="104" height="28" rx="14" fill="#c026d3"/>
+    <text x="1262" y="346" text-anchor="middle" class="badge">AGENT 2</text>
+    <text x="1310" y="382" text-anchor="middle" class="box-title">5480 / =>2>AB8</text>
+    <text x="1310" y="416" text-anchor="middle" class="box-text">news_spike</text>
+  </g>
+
+  <!-- Agent outputs -->
+  <path d="M 1435 150 C 1480 150, 1480 235, 1520 245" class="thin-arrow"/>
+  <path d="M 1435 275 L 1520 275" class="thin-arrow"/>
+  <path d="M 1435 400 C 1480 400, 1480 315, 1520 305" class="thin-arrow"/>
+
+  <g filter="url(#shadow)">
+    <rect x="1520" y="205" width="0" height="0" fill="none"/>
+  </g>
+
+  <!-- Second row: JSON, aggregation, event, application -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="555" width="245" height="135" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="202.5" y="592" text-anchor="middle" class="box-title">JSON-3>;>A0</text>
+    <text x="202.5" y="623" text-anchor="middle" class="box-text">shock_occurred</text>
+    <text x="202.5" y="647" text-anchor="middle" class="box-text">type, severity</text>
+    <text x="202.5" y="671" text-anchor="middle" class="box-text">duration, impact</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="390" y="540" width="285" height="165" rx="22" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+    <text x="532.5" y="578" text-anchor="middle" class="box-title">aggregate_shock_votes</text>
+    <text x="532.5" y="610" text-anchor="middle" class="box-text">1. >B1@0AK205B no shock</text>
+    <text x="532.5" y="633" text-anchor="middle" class="box-text">2. ?@>25@O5B allowed_shocks</text>
+    <text x="532.5" y="656" text-anchor="middle" class="box-text">3. 454C?;8F8@C5B B8?K</text>
+    <text x="532.5" y="679" text-anchor="middle" class="box-text">4. A>@B8@C5B ?> ?@8>@8B5BC</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="735" y="555" width="245" height="135" rx="22" fill="#fef2f2" stroke="#f87171" stroke-width="2"/>
+    <text x="857.5" y="592" text-anchor="middle" class="box-title">B>3>2K9 H>:</text>
+    <text x="857.5" y="622" text-anchor="middle" class="box-text">5A;8 halt / circuit_breaker,</text>
+    <text x="857.5" y="646" text-anchor="middle" class="box-text">>=8 ?>402;ONB</text>
+    <text x="857.5" y="670" text-anchor="middle" class="box-text">1>;55 A;01K5 H>:8</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1040" y="555" width="235" height="135" rx="22" fill="#e0e7ff" stroke="#6366f1" stroke-width="2"/>
+    <text x="1157.5" y="592" text-anchor="middle" class="box-title">SHOCK_TRIGGERED</text>
+    <text x="1157.5" y="623" text-anchor="middle" class="box-text">A>1KB85 2 EventBus</text>
+    <text x="1157.5" y="647" text-anchor="middle" class="small">payload: type, impact,</text>
+    <text x="1157.5" y="670" text-anchor="middle" class="small">duration, volatility</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1335" y="540" width="210" height="165" rx="22" fill="#ecfeff" stroke="#06b6d4" stroke-width="2"/>
+    <text x="1440" y="578" text-anchor="middle" class="box-title">@8<5=5=85</text>
+    <text x="1440" y="610" text-anchor="middle" class="box-text">F5=K *= impact</text>
+    <text x="1440" y="634" text-anchor="middle" class="box-text">volatility *= multiplier</text>
+    <text x="1440" y="658" text-anchor="middle" class="box-text">halt blocks trading</text>
+    <text x="1440" y="682" text-anchor="middle" class="box-text">=0 duration_ticks</text>
+  </g>
+
+  <!-- Connect agent cluster to JSON -->
+  <path d="M 1520 275 C 1565 275, 1565 500, 325 500 C 250 500, 220 525, 205 545" class="arrow"/>
+  <path d="M 325 622 L 380 622" class="arrow"/>
+  <path d="M 675 622 L 725 622" class="arrow"/>
+  <path d="M 980 622 L 1030 622" class="arrow"/>
+  <path d="M 1275 622 L 1325 622" class="arrow"/>
+
+  <!-- Priority legend -->
+  <g>
+    <rect x="80" y="755" width="1465" height="82" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="112" y="788" class="box-title">@8>@8B5BK H>:>2:</text>
+    <text x="315" y="788" class="priority">halt 100</text>
+    <text x="445" y="788" class="priority">circuit_breaker 90</text>
+    <text x="650" y="788" class="priority">short_ban 70</text>
+    <text x="810" y="788" class="priority">position_limit 60</text>
+    <text x="1000" y="788" class="priority">rate_hike 50</text>
+    <text x="1148" y="788" class="priority">news_spike 40</text>
+    <text x="112" y="820" class="small">'5< 2KH5 G8A;>, B5< A8;L=55 ?@8>@8B5B. halt 8 circuit_breaker ?5@5:@K20NB >AB0;L=K5 >4=>2@5<5==K5 H>:8.</text>
+  </g>
+</svg>
