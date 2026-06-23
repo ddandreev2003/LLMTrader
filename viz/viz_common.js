@@ -93,13 +93,24 @@ window.VizCommon = (function () {
     });
   }
 
-  function buildShockMarkers(shocks, barHistory) {
-    const timestamps = barHistory?.timestamps || [];
+  function getTimestampsForTicker(barHistory, ticker) {
+    const byTicker = barHistory?.timestamps_by_ticker;
+    if (byTicker && byTicker[ticker] && byTicker[ticker].length) {
+      return byTicker[ticker];
+    }
+    return barHistory?.timestamps || [];
+  }
+
+  function buildShockMarkers(shocks, barHistory, ticker) {
+    const timestamps = getTimestampsForTicker(barHistory, ticker || activeTicker);
     return (shocks || [])
       .map((s) => {
-        const tick = s.tick;
-        if (tick == null || tick < 0 || tick >= timestamps.length) return null;
-        const time = toUnixTime(timestamps[tick]);
+        let time = s.datetime ? toUnixTime(s.datetime) : 0;
+        if (!time) {
+          const tick = s.tick;
+          if (tick == null || tick < 0 || tick >= timestamps.length) return null;
+          time = toUnixTime(timestamps[tick]);
+        }
         if (!time) return null;
         const impact = Number(s.price_impact_pct) || 0;
         return {
@@ -113,9 +124,9 @@ window.VizCommon = (function () {
       .filter(Boolean);
   }
 
-  function updateShockMarkers(shocks, barHistory) {
+  function updateShockMarkers(shocks, barHistory, ticker) {
     if (!candleSeries) return;
-    const markers = buildShockMarkers(shocks, barHistory);
+    const markers = buildShockMarkers(shocks, barHistory, ticker);
     const LC = window.LightweightCharts;
     if (LC.createSeriesMarkers) {
       if (!shockMarkersApi) {
@@ -132,19 +143,26 @@ window.VizCommon = (function () {
     if (!candleSeries || !barHistory) return;
     activeTicker = ticker || activeTicker;
     const candles = (barHistory.candles && barHistory.candles[activeTicker]) || [];
-    const timestamps = barHistory.timestamps || [];
-    const data = candles
-      .map((c, i) => ({
-        time: toUnixTime(timestamps[i]),
-        open: Number(c.o),
+    const timestamps = getTimestampsForTicker(barHistory, activeTicker);
+    const byTime = new Map();
+    candles.forEach((c, i) => {
+      const time = toUnixTime(timestamps[i]);
+      if (!time) return;
+      const open = Number(c.o);
+      const close = Number(c.c);
+      if (!(open > 0 || close > 0)) return;
+      byTime.set(time, {
+        time,
+        open,
         high: Number(c.h),
         low: Number(c.l),
-        close: Number(c.c),
-      }))
-      .filter((d) => d.time > 0 && d.open > 0);
+        close,
+      });
+    });
+    const data = [...byTime.values()].sort((a, b) => a.time - b.time);
     if (data.length === 0) return;
     candleSeries.setData(data);
-    updateShockMarkers(shocks, barHistory);
+    updateShockMarkers(shocks, barHistory, activeTicker);
     if (candleChart) candleChart.timeScale().fitContent();
   }
 
@@ -242,6 +260,36 @@ window.VizCommon = (function () {
     return points.filter((_, i) => i % step === 0);
   }
 
+  function isMarketMaker(state, id) {
+    const snap = (state.agents || {})[id] || {};
+    const meta = (state.agents_meta || {})[id] || {};
+    return (snap.strategy || meta.strategy) === "market_maker";
+  }
+
+  function sparkSeries(state, id) {
+    const pts = (state.agent_equity || {})[id] || [];
+    if (!pts.length) return [];
+    if (isMarketMaker(state, id)) {
+      return pts.map((p) => Number(p.pnl ?? p.value ?? 0));
+    }
+    const base = Number(pts[0].value ?? 0);
+    return pts.map((p) => Number(p.value ?? 0) - base);
+  }
+
+  function yRange(values) {
+    if (!values.length) return {};
+    const minV = Math.min(...values);
+    const maxV = Math.max(...values);
+    const span = maxV - minV;
+    const pad = span > 0 ? span * 0.15 : Math.max(Math.abs(maxV) * 0.05, 1);
+    return { min: minV - pad, max: maxV + pad };
+  }
+
+  function alignEquityToTicks(points, ticks) {
+    const byTick = new Map((points || []).map((p) => [p.tick, p.value]));
+    return (ticks || []).map((t) => (byTick.has(t) ? byTick.get(t) : null));
+  }
+
   function formatHoldings(snap) {
     const h = snap?.holdings || {};
     const parts = Object.entries(h).map(([t, q]) => `${t}: ${q}`);
@@ -291,23 +339,32 @@ window.VizCommon = (function () {
         snap.strategy || m.strategy || "";
       const pnl = snap.pnl || 0;
       const pnlCls = pnl >= 0 ? "pnl-pos" : "pnl-neg";
-      panel.querySelector(".agent-panel-stats").innerHTML = `
+      const isMM = isMarketMaker(state, id);
+      if (isMM) {
+        const tradesN = snap.mm_trades || (trades[id] || []).length;
+        panel.querySelector(".agent-panel-stats").innerHTML = `
+        <span>PnL <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toLocaleString("ru")} ₽</span></span>
+        <span class="muted">сделок ${tradesN}</span>
+        <span class="muted">mark-to-market</span>`;
+      } else {
+        panel.querySelector(".agent-panel-stats").innerHTML = `
         <span>${(snap.portfolio_value || 0).toLocaleString("ru")} ₽</span>
         <span class="${pnlCls}">${pnl >= 0 ? "+" : ""}${pnl.toLocaleString("ru")} ₽</span>
         <span class="muted">cash ${(snap.cash || 0).toLocaleString("ru")} ₽</span>`;
+      }
       panel.querySelector(".agent-panel-holdings").textContent =
         "Позиции: " + formatHoldings(snap);
 
       const canvas = panel.querySelector(".agent-spark");
-      const curve = decimatePoints(
-        (equity[id] || []).map((p) => p.value),
-        500
-      );
+      const curve = decimatePoints(sparkSeries(state, id), 500);
+      const yBounds = yRange(curve);
       if (ChartLib && canvas && curve.length > 1) {
         if (agentSparkCharts[id]) {
           agentSparkCharts[id].data.labels = curve.map((_, i) => i);
           agentSparkCharts[id].data.datasets[0].data = curve;
           agentSparkCharts[id].data.datasets[0].borderColor = color;
+          agentSparkCharts[id].options.scales.y.min = yBounds.min;
+          agentSparkCharts[id].options.scales.y.max = yBounds.max;
           agentSparkCharts[id].update("none");
         } else {
           agentSparkCharts[id] = new ChartLib(canvas, {
@@ -330,11 +387,14 @@ window.VizCommon = (function () {
               plugins: { legend: { display: false } },
               scales: {
                 x: { display: false },
-                y: { display: false },
+                y: { display: false, min: yBounds.min, max: yBounds.max },
               },
             },
           });
         }
+      } else if (agentSparkCharts[id]) {
+        agentSparkCharts[id].destroy();
+        delete agentSparkCharts[id];
       }
 
       const tradeList = panel.querySelector(".agent-panel-trades");
@@ -426,6 +486,8 @@ window.VizCommon = (function () {
     updateHeader,
     renderAgentPanels,
     agentLabel,
+    isMarketMaker,
+    alignEquityToTicks,
     getActiveTicker: () => activeTicker,
     setActiveTicker: (t) => {
       activeTicker = t;

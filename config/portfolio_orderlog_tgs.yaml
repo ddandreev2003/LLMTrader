@@ -1,0 +1,45 @@
+shock_price:
+  persistent: true
+  impact_decay_per_bar: 1.0
+
+trading:
+  hft_mode: false
+  max_trades_per_step: 2
+  warmup_bars: 6
+  warmup_fast: true
+  min_kline_bars: 14
+  trade_cutoff_bars: 6
+  kline_history_bars: 60
+
+portfolio:
+  initial_cash_rub: 1000000
+  agent_max_position_pct: 0.95
+  commission_pct: 0.0003
+  trade_cutoff_bars: 6
+
+assets:
+  - ticker: T
+  - ticker: GAZP
+  - ticker: SBER
+
+data:
+  source: orderlog_stream
+  zip_dir: datasets/moex/orderlog
+  from: "2025-01-03"
+  till: "2025-01-31"
+  bar_interval: 1m
+  decision_on: bar_close
+  warmup_bars: 6
+  warmup_fast: true
+  min_kline_bars: 14
+  kline_history_bars: 60
+
+sim:
+  use_full_range: false
+  max_bars: 500
+
+market_maker:
+  enabled: true
+  spread_bps: 8
+  quote_size: 50
+  max_inventory: 5000

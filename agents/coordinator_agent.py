@@ -8,6 +8,7 @@ from pathlib import Path
 from agents.base_agent import BaseAgent
 from agents.portfolio_strategy_agent import PortfolioStrategyAgent
 from agents.ticker_strategy_agent import TickerStrategyAgent, load_yaml_config
+from agents.quant_agent_ticker_agent import QuantAgentTickerAgent
 from core.event_bus import Event, EventType
 
 
@@ -51,6 +52,8 @@ class PortfolioCoordinatorAgent(BaseAgent):
         rebalance_interval_ticks: int = 6,
         max_total_exposure_pct: float = 0.95,
         hft_mode: bool = False,
+        shock_block_buys: bool = True,
+        shock_block_buys_while_active: bool = True,
     ):
         super().__init__(bus)
         self.agent_id = agent_id
@@ -60,6 +63,8 @@ class PortfolioCoordinatorAgent(BaseAgent):
         self.llm_enabled = llm_enabled
         self.rebalance_interval = rebalance_interval_ticks
         self.max_total_exposure_pct = max_total_exposure_pct
+        self.shock_block_buys = shock_block_buys
+        self.shock_block_buys_while_active = shock_block_buys_while_active
         self.hft_mode = hft_mode
 
         self._tick_counter = 0
@@ -72,7 +77,6 @@ class PortfolioCoordinatorAgent(BaseAgent):
         self._trading_enabled = True
         self._datetime = ""
         self._bar_interval = "5m"
-        self.hft_mode = False
         self._micro_phase = "close"
 
     async def on_proposed_signal(self, event: Event):
@@ -114,6 +118,8 @@ class PortfolioCoordinatorAgent(BaseAgent):
             decisions = await self._llm_gate()
         else:
             decisions = self._passthrough_decisions()
+
+        decisions = self._apply_risk_rules(decisions)
 
         for decision in decisions:
             if not decision.get("approved"):
@@ -171,6 +177,40 @@ class PortfolioCoordinatorAgent(BaseAgent):
                     "reason": proposal.get("reason", "passthrough"),
                 }
             )
+        return out
+
+    def _apply_risk_rules(self, decisions: list[dict]) -> list[dict]:
+        """Block buys on negative shocks; always allow de-risking sells."""
+        if not decisions:
+            return decisions
+
+        blocked_tickers: set[str] = set()
+        if self.shock_block_buys:
+            for shock in self._active_shocks:
+                impact = float(shock.get("price_impact_pct", 0))
+                if not self.shock_block_buys_while_active and impact >= 0:
+                    continue
+                t = shock.get("ticker")
+                if t:
+                    blocked_tickers.add(t)
+                else:
+                    blocked_tickers.update(self.universe)
+
+        out: list[dict] = []
+        for d in decisions:
+            action = d.get("action", "hold")
+            ticker = d.get("ticker", "")
+            if action == "buy" and ticker in blocked_tickers:
+                d = {
+                    **d,
+                    "approved": False,
+                    "action": "hold",
+                    "quantity": 0,
+                    "reason": f"blocked buy: active shock on {ticker}",
+                }
+            elif action == "sell" and int(d.get("quantity", 0)) > 0:
+                d = {**d, "approved": True}
+            out.append(d)
         return out
 
     async def _llm_gate(self) -> list[dict]:
@@ -262,23 +302,38 @@ def create_intraday_agents_from_config(
             agents.append(agent)
         return agents, None
 
-    ticker_agents: list[TickerStrategyAgent] = []
+    ticker_agents: list = []
     for entry in entries:
-        agent = TickerStrategyAgent(
-            bus=bus,
-            agent_id=entry["id"],
-            ticker=entry["ticker"],
-            strategy_name=entry["strategy"],
-            params=entry.get("params", {}),
-            llm_enabled=bool(entry.get("llm_enabled", False)),
-            call_interval_ticks=int(entry.get("call_interval_ticks", 12)),
-            max_position_pct=agent_max_pct,
-            commission_pct=commission_pct,
-            trade_cutoff_ticks=trade_cutoff,
-            proposal_mode=not global_hft,
-            intraday_mode=True,
-            hft_mode=global_hft,
-        )
+        agent_type = entry.get("type", "ticker")
+        if agent_type == "quant_agent":
+            agent = QuantAgentTickerAgent(
+                bus=bus,
+                agent_id=entry["id"],
+                ticker=entry["ticker"],
+                params=entry.get("params", {}),
+                call_interval_bars=int(entry.get("call_interval_bars", entry.get("call_interval_ticks", 1))),
+                max_position_pct=agent_max_pct,
+                commission_pct=commission_pct,
+                trade_cutoff_ticks=trade_cutoff,
+                proposal_mode=not global_hft,
+                bar_interval=(portfolio_cfg or {}).get("data", {}).get("bar_interval", "1m"),
+            )
+        else:
+            agent = TickerStrategyAgent(
+                bus=bus,
+                agent_id=entry["id"],
+                ticker=entry["ticker"],
+                strategy_name=entry["strategy"],
+                params=entry.get("params", {}),
+                llm_enabled=bool(entry.get("llm_enabled", False)),
+                call_interval_ticks=int(entry.get("call_interval_ticks", 12)),
+                max_position_pct=agent_max_pct,
+                commission_pct=commission_pct,
+                trade_cutoff_ticks=trade_cutoff,
+                proposal_mode=not global_hft,
+                intraday_mode=True,
+                hft_mode=global_hft,
+            )
         agent.initial_capital = float(entry.get("initial_capital_rub", default_capital))
         ticker_agents.append(agent)
 
@@ -297,5 +352,9 @@ def create_intraday_agents_from_config(
         rebalance_interval_ticks=int(coord_cfg.get("rebalance_interval_ticks", 6)),
         max_total_exposure_pct=float(coord_cfg.get("max_total_exposure_pct", 0.95)),
         hft_mode=global_hft or bool(coord_cfg.get("hft_mode", False)),
+        shock_block_buys=bool(coord_cfg.get("shock_block_buys", True)),
+        shock_block_buys_while_active=bool(
+            coord_cfg.get("shock_block_buys_while_active", True)
+        ),
     )
     return ticker_agents, coordinator

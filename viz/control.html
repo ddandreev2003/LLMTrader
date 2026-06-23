@@ -249,7 +249,8 @@
         plugins: { legend: { labels: { color: '#8b9cb3' } } },
         scales: {
           x: { ticks: { color: '#8b9cb3', maxTicksLimit: 12 }, grid: { color: '#2d3a4f' } },
-          y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
+          y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' }, position: 'left' },
+          y1: { display: false },
         },
       };
       equityChart = new Chart(document.getElementById('equityChart'), {
@@ -279,14 +280,43 @@
       VC.updateCandleChart(VC.getActiveTicker(), barHist, state.shocks);
 
       const hist = state.price_history || { ticks: [], benchmark: [] };
-      const agentIds = Object.keys(state.agent_equity || state.agents_meta || state.agents || {});
+      const allIds = Object.keys(state.agent_equity || state.agents_meta || state.agents || {});
+      const tradingIds = allIds.filter((id) => !VC.isMarketMaker(state, id));
+      const mmIds = allIds.filter((id) => VC.isMarketMaker(state, id));
       equityChart.data.labels = hist.ticks;
-      equityChart.data.datasets = agentIds.map((id, i) => ({
-        label: VC.agentLabel(state, id),
-        data: (state.agent_equity[id] || []).map(p => p.value),
-        borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
-        tension: 0.2, pointRadius: 0,
-      }));
+      equityChart.data.datasets = [
+        ...tradingIds.map((id, i) => ({
+          label: VC.agentLabel(state, id),
+          data: (state.agent_equity[id] || []).map((p) => ({ x: p.tick, y: p.value })),
+          borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
+          tension: 0.2,
+          pointRadius: 0,
+          yAxisID: "y",
+        })),
+        ...mmIds.map((id) => ({
+          label: VC.agentLabel(state, id) + " (PnL)",
+          data: (state.agent_equity[id] || []).map((p) => ({
+            x: p.tick,
+            y: p.pnl ?? p.value ?? 0,
+          })),
+          borderColor: "#14b8a6",
+          borderDash: [4, 3],
+          tension: 0.2,
+          pointRadius: 0,
+          yAxisID: "y1",
+        })),
+      ];
+      equityChart.options.scales.x = {
+        type: "linear",
+        ticks: { color: "#8b9cb3", maxTicksLimit: 12 },
+        grid: { color: "#2d3a4f" },
+      };
+      equityChart.options.scales.y1 = {
+        position: "right",
+        display: mmIds.length > 0,
+        ticks: { color: "#14b8a6" },
+        grid: { drawOnChartArea: false },
+      };
       equityChart.update('none');
 
       VC.renderAgentPanels('agent-panels', state, Chart);

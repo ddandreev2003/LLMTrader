@@ -262,3 +262,20 @@ def resolve_sim_tick_count(
             return n
 
     return len(price_data)
+
+
+def resolve_stream_max_bars(
+    portfolio_cfg: dict,
+    env_sim_n_ticks: str | int | None = None,
+) -> int | None:
+    """Bar cap for orderlog_stream: env SIM_N_TICKS → sim.max_bars → unlimited."""
+    if env_sim_n_ticks not in (None, ""):
+        raw = str(env_sim_n_ticks).strip()
+        if raw and raw != "0":
+            return int(raw)
+    sim_cfg = portfolio_cfg.get("sim") or {}
+    if sim_cfg.get("max_bars"):
+        return int(sim_cfg["max_bars"])
+    if sim_cfg.get("use_full_range"):
+        return None
+    return None

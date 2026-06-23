@@ -23,6 +23,13 @@ def get_llm_model_smart() -> str:
     return "qwen/qwen3.7-plus" if _using_routerai() else "gpt-4o"
 
 
+def get_llm_model_vision() -> str:
+    env_model = os.environ.get("LLM_MODEL_VISION", "").strip()
+    if env_model:
+        return env_model
+    return "qwen/qwen-vl-plus" if _using_routerai() else "gpt-4o"
+
+
 class BaseAgent:
     """
     Общий каркас для всех агентов.

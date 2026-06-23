@@ -1,0 +1,65 @@
+strategy_agents:
+  - id: quant_t
+    ticker: T
+    type: quant_agent
+    call_interval_bars: 1
+    params:
+      target_weight_pct: 0.32
+      stop_loss_pct: 0.010
+      take_profit_pct: 0.018
+      min_ta_score: 2
+      ta_entry_threshold: 2
+      forecast_bars: 5
+      min_hold_bars: 6
+      max_hold_bars: 45
+      shock_exit_impact_pct: -0.2
+      shock_take_profit_impact_pct: 0.15
+      shock_take_profit_min_gain_pct: 0.002
+
+  - id: quant_gazp
+    ticker: GAZP
+    type: quant_agent
+    call_interval_bars: 1
+    params:
+      target_weight_pct: 0.30
+      stop_loss_pct: 0.010
+      take_profit_pct: 0.020
+      min_ta_score: 3
+      ta_entry_threshold: 3
+      forecast_bars: 5
+      min_hold_bars: 8
+      max_hold_bars: 55
+      shock_exit_impact_pct: -0.2
+      shock_take_profit_impact_pct: 0.15
+      shock_take_profit_min_gain_pct: 0.003
+      no_add_to_position: true
+
+  - id: quant_sber
+    ticker: SBER
+    type: quant_agent
+    call_interval_bars: 1
+    params:
+      target_weight_pct: 0.34
+      stop_loss_pct: 0.010
+      take_profit_pct: 0.018
+      min_ta_score: 2
+      ta_entry_threshold: 2
+      forecast_bars: 5
+      min_hold_bars: 6
+      max_hold_bars: 50
+      shock_exit_impact_pct: -0.25
+      shock_take_profit_impact_pct: 0.15
+      shock_take_profit_min_gain_pct: 0.002
+
+coordinator:
+  id: tgs_coordinator
+  universe: [T, GAZP, SBER]
+  llm_enabled: false
+  rebalance_interval_ticks: 1
+  max_total_exposure_pct: 0.90
+  shock_block_buys: true
+  shock_block_buys_while_active: true
+  default_targets:
+    T: 0.34
+    GAZP: 0.33
+    SBER: 0.33

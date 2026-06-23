@@ -193,6 +193,10 @@
     }
     .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
     .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .book-table { width: 100%; font-size: 0.72rem; border-collapse: collapse; }
+    .book-table th, .book-table td { padding: 3px 6px; text-align: right; border-bottom: 1px solid #1e293b; }
+    .book-table th { color: var(--muted); text-align: left; }
+    .quant-report { font-size: 0.75rem; color: var(--muted); max-height: 120px; overflow: auto; white-space: pre-wrap; margin-top: 6px; }
   </style>
   <script src="sim_controls.js?v=1"></script>
 </head>
@@ -233,7 +237,7 @@
   <div class="grid">
     <div>
       <div class="card">
-        <h2>Свечи 5m (T / SBER)</h2>
+        <h2>Свечи (T / GAZP / SBER)</h2>
         <div id="ticker-tabs" class="ticker-tabs"></div>
         <div class="chart-wrap"><div id="candleChart"></div></div>
       </div>
@@ -247,6 +251,14 @@
       <div class="card">
         <h2>Регуляторные шоки</h2>
         <div id="shock-list" class="shock-list"></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>Стакан (реконструкция OrderLog)</h2>
+        <div id="orderbook-panel" class="muted">—</div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>QuantAgent rationale</h2>
+        <div id="quant-reports-panel" class="muted">—</div>
       </div>
       <div class="card" style="margin-top:16px">
         <h2>Лента событий</h2>
@@ -263,7 +275,7 @@
     const HEADER_IDS = { statusBadge: 'status-badge', tickInfo: 'tick-info', dateInfo: 'date-info', benchInfo: 'bench-info' };
 
     function initCharts() {
-      VC.initCandleTabs('ticker-tabs', ['T', 'SBER'], (t) => {
+      VC.initCandleTabs('ticker-tabs', ['T', 'GAZP', 'SBER'], (t) => {
         VC.setActiveTicker(t);
         if (window._lastState) VC.updateCandleChart(t, window._lastState.bar_history, window._lastState.shocks);
       });
@@ -279,7 +291,8 @@
           plugins: { legend: { labels: { color: '#8b9cb3', font: { size: 10 } } } },
           scales: {
             x: { ticks: { color: '#8b9cb3', maxTicksLimit: 12 }, grid: { color: '#2d3a4f' } },
-            y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' } },
+            y: { ticks: { color: '#8b9cb3' }, grid: { color: '#2d3a4f' }, position: 'left' },
+            y1: { display: false },
           },
         },
       });
@@ -290,29 +303,100 @@
       VC.updateHeader(state, HEADER_IDS);
       VC.renderLaunchPanel('launch-panel', state.status === 'initializing');
 
-      const barHist = state.bar_history || { tickers: ['T','SBER'], candles: {}, timestamps: [] };
+      const barHist = state.bar_history || { tickers: ['T','GAZP','SBER'], candles: {}, timestamps: [] };
       if (barHist.tickers && barHist.tickers.length) {
         VC.updateCandleChart(VC.getActiveTicker(), barHist, state.shocks);
       }
 
       const hist = state.price_history || { ticks: [], benchmark: [] };
-      const agentIds = Object.keys(state.agent_equity || state.agents_meta || state.agents || {});
+      const allIds = Object.keys(state.agent_equity || state.agents_meta || state.agents || {});
+      const tradingIds = allIds.filter((id) => !VC.isMarketMaker(state, id));
+      const mmIds = allIds.filter((id) => VC.isMarketMaker(state, id));
+
       equityChart.data.labels = hist.ticks;
-      equityChart.data.datasets = agentIds.map((id, i) => ({
+      const tradingSets = tradingIds.map((id, i) => ({
         label: VC.agentLabel(state, id),
-        data: (state.agent_equity[id] || []).map(p => p.value),
+        data: (state.agent_equity[id] || []).map((p) => ({ x: p.tick, y: p.value })),
         borderColor: AGENT_COLORS[i % AGENT_COLORS.length],
         tension: 0.2,
         pointRadius: 0,
+        yAxisID: "y",
       }));
-      equityChart.update('none');
+      const mmSets = mmIds.map((id, i) => ({
+        label: VC.agentLabel(state, id) + " (PnL)",
+        data: (state.agent_equity[id] || []).map((p) => ({
+          x: p.tick,
+          y: p.pnl ?? p.value ?? 0,
+        })),
+        borderColor: "#14b8a6",
+        borderDash: [4, 3],
+        tension: 0.2,
+        pointRadius: 0,
+        yAxisID: "y1",
+      }));
+      equityChart.data.datasets = [...tradingSets, ...mmSets];
+      equityChart.options.scales.x = {
+        type: "linear",
+        ticks: { color: "#8b9cb3", maxTicksLimit: 12 },
+        grid: { color: "#2d3a4f" },
+        title: { display: false },
+      };
+      equityChart.options.scales.y1 = {
+        position: "right",
+        display: mmSets.length > 0,
+        ticks: { color: "#14b8a6" },
+        grid: { drawOnChartArea: false },
+        title: { display: true, text: "MM PnL ₽", color: "#14b8a6", font: { size: 10 } },
+      };
+      equityChart.update("none");
 
       VC.renderAgentPanels('agent-panels', state, Chart);
 
       const shockList = document.getElementById('shock-list');
       VC.renderShockList('shock-list', state.shocks);
+      renderOrderbook(state.orderbook || {}, state.market_maker || {});
+      renderQuantReports(state.quant_reports || {});
       VC.renderEventLog('event-log', state.recent_events, true);
       VC.flashLatestShock(state.shocks);
+    }
+
+    function renderOrderbook(book, mmState) {
+      const el = document.getElementById('orderbook-panel');
+      if (!book || !Object.keys(book).length) { el.textContent = '—'; return; }
+      let html = '';
+      for (const [ticker, snap] of Object.entries(book)) {
+        const bids = (snap.bids || []).slice(0, 5);
+        const asks = (snap.asks || []).slice(0, 5);
+        const mm = snap.mm_quote || {};
+        const inv = (mmState.inventory || {})[ticker] || {};
+        html += `<div style="margin-bottom:10px"><strong>${ticker}</strong> mid ${snap.mid ?? '—'} spread ${snap.spread ?? '—'}`;
+        if (mm.bid) {
+          html += ` · <span style="color:#14b8a6">MM ${mm.bid} / ${mm.ask} (inv ${inv.position ?? 0})</span>`;
+        }
+        html += '<table class="book-table"><tr><th>Bid</th><th>Vol</th><th>Ask</th><th>Vol</th></tr>';
+        const rows = Math.max(bids.length, asks.length);
+        for (let i = 0; i < rows; i++) {
+          const b = bids[i] || {}; const a = asks[i] || {};
+          const bStyle = b.mm ? ' style="color:#14b8a6;font-weight:600"' : '';
+          const aStyle = a.mm ? ' style="color:#14b8a6;font-weight:600"' : '';
+          html += `<tr><td${bStyle}>${b.price ?? ''}</td><td>${b.volume ?? ''}</td><td${aStyle}>${a.price ?? ''}</td><td>${a.volume ?? ''}</td></tr>`;
+        }
+        html += '</table></div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function renderQuantReports(reports) {
+      const el = document.getElementById('quant-reports-panel');
+      if (!reports || !Object.keys(reports).length) { el.textContent = '—'; return; }
+      let html = '';
+      for (const [aid, block] of Object.entries(reports)) {
+        const r = block.reports || {};
+        html += `<div style="margin-bottom:12px"><strong>${aid}</strong> (${block.ticker || ''}) tick ${block.tick ?? ''}`;
+        html += `<div class="quant-report">${(r.indicator || '').slice(0, 400)}</div>`;
+        html += `<div class="quant-report">${(block.reason || r.raw_decision || '').slice(0, 300)}</div></div>`;
+      }
+      el.innerHTML = html;
     }
 
     async function poll() {

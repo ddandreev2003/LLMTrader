@@ -1,0 +1,3 @@
+[submodule "vendor/QuantAgent"]
+	path = vendor/QuantAgent
+	url = https://github.com/Y-Research-SBU/QuantAgent.git

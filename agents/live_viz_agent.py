@@ -71,6 +71,7 @@ class LiveVizAgent(BaseAgent):
             "price_history": {"ticks": [], "dates": [], "benchmark": []},
             "bar_history": {
                 "timestamps": [],
+                "timestamps_by_ticker": {t: [] for t in tickers},
                 "interval": "5m",
                 "tickers": tickers,
                 "candles": {t: [] for t in tickers},
@@ -80,11 +81,16 @@ class LiveVizAgent(BaseAgent):
             "sim_total_days": 0,
             "recent_events": [],
             "event_counts": {},
+            "orderbook": {},
+            "market_maker": {},
+            "quant_reports": {},
+            "orderlog_stream": False,
             "updated_at": 0.0,
         }
         self._max_history = max(300, int(max_history))
         self._max_agent_trades = 20
         self._max_events = 200
+        self._first_tick_logged = False
         self._last_datetime = ""
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         self._write_state()
@@ -129,6 +135,65 @@ class LiveVizAgent(BaseAgent):
             self._state["recent_events"] = events[-self._max_events :]
         self._update_event_counts()
 
+    def _sync_mm_agent_panel(self, mm_payload: dict, tick: int) -> None:
+        """Expose MM inventory on the dashboard agent panel (not in portfolio registry)."""
+        meta = self._agents_meta.get("mm_agent")
+        if not meta:
+            return
+        inventory = mm_payload.get("inventory") or {}
+        prices = self._state.get("prices") or {}
+        cash_pnl = 0.0
+        position_value = 0.0
+        total_trades = 0
+        holdings: dict[str, float] = {}
+        for ticker, inv in inventory.items():
+            pos = float(inv.get("position", 0))
+            cash_pnl += float(inv.get("cash_pnl", 0))
+            total_trades += int(inv.get("trades", 0))
+            if pos:
+                holdings[ticker] = pos
+                position_value += pos * float(prices.get(ticker, 0))
+        mark_pnl = round(cash_pnl + position_value, 2)
+        snap = {
+            "agent_id": "mm_agent",
+            "strategy": "market_maker",
+            "display_name": meta.get("display_name", "Market Maker"),
+            "nft_color": meta.get("nft_color", "#14b8a6"),
+            "universe": meta.get("universe", []),
+            "tickers": meta.get("tickers", []),
+            "cash": round(cash_pnl, 2),
+            "position": sum(holdings.values()),
+            "holdings": holdings,
+            "portfolio_value": mark_pnl,
+            "pnl": mark_pnl,
+            "mm_trades": total_trades,
+        }
+        self._state["agents"]["mm_agent"] = snap
+
+        for fill in mm_payload.get("bar_fills") or []:
+            trade_rec = {
+                "tick": fill.get("tick", tick),
+                "datetime": self._last_datetime,
+                "ticker": fill.get("ticker", ""),
+                "action": fill.get("action", ""),
+                "quantity": fill.get("quantity", 0),
+                "price": fill.get("price", 0),
+            }
+            trades = self._state["agent_trades"].setdefault("mm_agent", [])
+            trades.append(trade_rec)
+            if len(trades) > self._max_agent_trades:
+                self._state["agent_trades"]["mm_agent"] = trades[-self._max_agent_trades :]
+
+        curve = self._state["agent_equity"].setdefault("mm_agent", [])
+        if not curve:
+            curve.append({"tick": 0, "value": 0.0, "pnl": 0.0})
+        if not curve or curve[-1].get("tick") != tick:
+            curve.append({"tick": tick, "value": mark_pnl, "pnl": mark_pnl})
+        else:
+            curve[-1] = {"tick": tick, "value": mark_pnl, "pnl": mark_pnl}
+        if len(curve) > self._max_history:
+            self._state["agent_equity"]["mm_agent"] = curve[-self._max_history :]
+
     async def on_sim_started(self, event: Event):
         self._state["status"] = "running"
         self._push_event("system", "Симуляция запущена")
@@ -147,32 +212,64 @@ class LiveVizAgent(BaseAgent):
         self._state["halted"] = bool(p.get("halted", False))
         self._state["benchmark_price"] = round(float(p.get("price", 0)), 2)
         self._state["prices"] = {k: round(float(v), 2) for k, v in p.get("prices", {}).items()}
+        if p.get("orderbook"):
+            self._state["orderbook"] = p.get("orderbook")
+        if p.get("market_maker"):
+            self._state["market_maker"] = p.get("market_maker")
+            self._sync_mm_agent_panel(p.get("market_maker"), tick)
+        self._state["orderlog_stream"] = bool(p.get("orderlog_stream", False))
 
         tickers = list(p.get("tickers") or self._state["prices"].keys())
         bar_hist = self._state["bar_history"]
         bar_hist["interval"] = p.get("bar_interval", "5m")
         bar_hist["tickers"] = tickers
+        bar_hist.setdefault("timestamps_by_ticker", {})
         for t in tickers:
             bar_hist["candles"].setdefault(t, [])
+            bar_hist["timestamps_by_ticker"].setdefault(t, [])
 
         ts_label = p.get("datetime", "")
         bars = p.get("bars") or {}
+        stream_mode = bool(p.get("orderlog_stream"))
+        closed_ticker = p.get("closed_ticker")
+        closed_bar = p.get("closed_bar") or {}
         append_candle = p.get("micro_phase", "close") == "close" or not p.get("hft_mode")
-        if append_candle:
+
+        def _candle_from_bar(t: str, b: dict) -> dict:
+            return {
+                "o": b.get("open", self._state["prices"].get(t, 0)),
+                "h": b.get("high", self._state["prices"].get(t, 0)),
+                "l": b.get("low", self._state["prices"].get(t, 0)),
+                "c": b.get("close", self._state["prices"].get(t, 0)),
+                "v": b.get("volume", 0),
+            }
+
+        if stream_mode and closed_ticker and append_candle:
+            t = closed_ticker
+            b = closed_bar if closed_bar else bars.get(t, {})
+            bar_hist["timestamps"].append(ts_label)
+            bar_hist["timestamps_by_ticker"][t].append(ts_label)
+            bar_hist["candles"][t].append(_candle_from_bar(t, b))
+            if len(bar_hist["timestamps"]) > self._max_history:
+                bar_hist["timestamps"] = bar_hist["timestamps"][-self._max_history :]
+            if len(bar_hist["timestamps_by_ticker"][t]) > self._max_history:
+                bar_hist["timestamps_by_ticker"][t] = bar_hist["timestamps_by_ticker"][t][
+                    -self._max_history :
+                ]
+            if len(bar_hist["candles"][t]) > self._max_history:
+                bar_hist["candles"][t] = bar_hist["candles"][t][-self._max_history :]
+        elif append_candle:
             bar_hist["timestamps"].append(ts_label)
             for t in tickers:
                 b = bars.get(t) or {}
-                candle = {
-                    "o": b.get("open", self._state["prices"].get(t, 0)),
-                    "h": b.get("high", self._state["prices"].get(t, 0)),
-                    "l": b.get("low", self._state["prices"].get(t, 0)),
-                    "c": b.get("close", self._state["prices"].get(t, 0)),
-                    "v": b.get("volume", 0),
-                }
-                bar_hist["candles"][t].append(candle)
+                bar_hist["timestamps_by_ticker"][t].append(ts_label)
+                bar_hist["candles"][t].append(_candle_from_bar(t, b))
             if len(bar_hist["timestamps"]) > self._max_history:
                 bar_hist["timestamps"] = bar_hist["timestamps"][-self._max_history :]
                 for t in tickers:
+                    bar_hist["timestamps_by_ticker"][t] = bar_hist["timestamps_by_ticker"][t][
+                        -self._max_history :
+                    ]
                     bar_hist["candles"][t] = bar_hist["candles"][t][-self._max_history :]
         elif bar_hist["timestamps"] and bars:
             idx = len(bar_hist["timestamps"]) - 1
@@ -210,6 +307,12 @@ class LiveVizAgent(BaseAgent):
         unique_dates = {d for d in hist["dates"] if d}
         self._state["sim_trading_days"] = len(unique_dates)
 
+        if not self._first_tick_logged and tick >= 0:
+            from core.sim_log import log_done
+
+            log_done("LiveViz", f"первый tick={tick}, state → dashboard.html")
+            self._first_tick_logged = True
+
         self._write_state()
 
     def set_sim_scope(self, total_bars: int, trading_days: int) -> None:
@@ -241,6 +344,10 @@ class LiveVizAgent(BaseAgent):
             k: round(float(v), 2) for k, v in p.get("prices", {}).items()
         }
         self._state["benchmark_price"] = round(float(p.get("price", 0)), 2)
+        if p.get("orderbook"):
+            self._state["orderbook"] = p.get("orderbook")
+        if p.get("market_maker"):
+            self._state["market_maker"] = p.get("market_maker")
         self._write_state()
 
     async def on_halt(self, event: Event):
@@ -310,6 +417,15 @@ class LiveVizAgent(BaseAgent):
     async def on_proposal(self, event: Event):
         p = event.payload
         action = p.get("action", "hold")
+        if p.get("quant_reports"):
+            agent_id = p.get("agent_id", "")
+            reports = self._state.setdefault("quant_reports", {})
+            reports[agent_id] = {
+                "ticker": p.get("ticker", ""),
+                "reports": p.get("quant_reports"),
+                "reason": p.get("reason", ""),
+                "tick": p.get("tick", self._state["tick"]),
+            }
         if action == "hold":
             return
         self._push_event(

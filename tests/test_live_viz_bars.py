@@ -50,6 +50,52 @@ def test_live_viz_records_bar_history():
     assert state["datetime"] == "2025-01-03T07:10:00"
 
 
+def test_live_viz_orderlog_stream_per_ticker_candles():
+    class DummyBus:
+        def subscribe(self, *args):
+            pass
+
+    agent = LiveVizAgent(DummyBus(), agents=[])
+
+    async def run():
+        for tick, ticker, dt, close in [
+            (1, "T", "2025-01-03T07:00:00", 3000),
+            (2, "GAZP", "2025-01-03T07:01:00", 150),
+            (3, "SBER", "2025-01-03T07:02:00", 250),
+            (4, "T", "2025-01-03T07:03:00", 3010),
+        ]:
+            await agent.on_tick(
+                Event(
+                    type=EventType.TICK,
+                    payload={
+                        "tick": tick,
+                        "datetime": dt,
+                        "orderlog_stream": True,
+                        "closed_ticker": ticker,
+                        "closed_bar": {
+                            "open": close - 5,
+                            "high": close + 5,
+                            "low": close - 10,
+                            "close": close,
+                            "volume": 100,
+                        },
+                        "prices": {"T": 3000, "GAZP": 150, "SBER": 250},
+                        "tickers": ["T", "GAZP", "SBER"],
+                        "bars": {},
+                        "agent_portfolios": {},
+                    },
+                )
+            )
+
+    asyncio.run(run())
+    bh = agent.get_state()["bar_history"]
+    assert len(bh["candles"]["T"]) == 2
+    assert len(bh["candles"]["GAZP"]) == 1
+    assert len(bh["timestamps_by_ticker"]["T"]) == 2
+    assert bh["timestamps_by_ticker"]["T"][0] == "2025-01-03T07:00:00"
+    assert bh["candles"]["T"][1]["c"] == 3010
+
+
 def test_live_viz_logs_proposal_and_reject():
     class DummyBus:
         def subscribe(self, *args):
